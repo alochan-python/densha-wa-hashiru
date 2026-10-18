@@ -151,3 +151,9 @@ details summary{cursor:pointer;font-weight:700}
 .autobar .progress span{background:var(--amber)}
 .box p.big{font-size:1.1rem;font-weight:700}
 .qtext .chip{font-size:.78rem;padding:2px 10px;vertical-align:middle}
+/* ホームの2モード */
+.modes.two{grid-template-columns:1fr}
+.mode.big{padding:16px;align-items:center}
+.mode.big b{font-size:1.15rem}
+.mode.big .lt{width:42px;height:42px;font-size:1.2rem}
+.tiles{grid-template-columns:repeat(3,1fr)} .tiles .tile .v{font-size:1.3rem}

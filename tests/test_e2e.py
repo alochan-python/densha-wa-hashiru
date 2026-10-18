@@ -18,24 +18,15 @@ try:
         pg.on("pageerror", lambda e: errs.append(str(e)))
         pg.on("console", lambda m: errs.append(m.text) if m.type == "error" and "fonts" not in m.text else None)
         pg.goto(URL); pg.wait_for_selector(".tile")
-        t("起動・ホーム表示", pg.locator(".tile").count() == 6)
-        ntk = pg.evaluate("APPDATA.questions.filter(q=>q.subj==='taketori').length"); nd = pg.evaluate("APPDATA.questions.filter(q=>q.subj==='densha').length")
-        t(f"初期教材は竹取物語（{ntk}問）", pg.evaluate("__app.SUBJ") == "taketori" and str(ntk) in pg.inner_text("main"))
+        t("起動・ホーム表示（モードは2つだけ）", pg.locator(".tile").count() == 3 and pg.locator("[data-mode]").count() == 2)
+        BUN = "['心情','理由','表現','抜き出し','視点','記述','総合','現代語訳','主語・敬語'].includes(q.cat)"
+        ntk = pg.evaluate(f"APPDATA.questions.filter(q=>q.subj==='taketori'&&{BUN}).length"); nd = pg.evaluate(f"APPDATA.questions.filter(q=>q.subj==='densha'&&{BUN}).length")
+        t(f"初期教材は竹取物語（文章問題{ntk}問）", pg.evaluate("__app.SUBJ") == "taketori" and str(ntk) in pg.inner_text("main"))
         pg.screenshot(path=f"{SHOT}/00_home_tk.png", full_page=True)
-        # 竹取：漢字11問 完全習得（全問正解までくり返す）
-        pg.click('[data-mode="I"]'); pg.wait_for_selector(".qtext")
-        q0 = pg.evaluate("__app.SES.queue.slice()")
-        t("漢字11問モードは11問", len(q0) == 11 and all(i.startswith("TK") for i in q0))
-        first = q0[0]
-        pg.fill("input[type=text]", "まちがい"); pg.click("#submit"); pg.click("#next")
-        t("間違えた漢字は最後にもう一度", pg.evaluate("__app.SES.queue.length") == 12 and pg.evaluate("__app.SES.queue[11]") == first)
-        for _ in range(11):
-            cur = pg.evaluate("__app.SES.queue[__app.SES.pos]")
-            pg.fill("input[type=text]", pg.evaluate(f"APPDATA.questions.find(x=>x.id==='{cur}').model")); pg.click("#submit"); pg.click("#next")
-        t("全問正解で終了", "全問正解しました" in pg.inner_text("main"))
-        # 語句37
-        pg.click('[data-go="home"]'); pg.click('[data-mode="J"]'); pg.wait_for_selector(".qtext")
-        t("語句37語モード", pg.evaluate("__app.SES.queue.length") == 37)
+        # 1 自分で解く：文章問題だけ
+        pg.click('[data-mode="P"]'); pg.wait_for_selector(".qtext")
+        qq = pg.evaluate("__app.SES.queue.slice()")
+        t("自分で解く：文章問題だけ出題", len(qq) == ntk and pg.evaluate(f"__app.SES.queue.every(id=>{{const q=APPDATA.questions.find(x=>x.id===id);return {BUN};}})"))
         pg.click('[data-go="home"]')
         # 古文の傍線表示
         pg.evaluate("__app.showQ('TG06')")
@@ -57,7 +48,7 @@ try:
         # 教材切り替えと混在防止
         pg.click('[data-go="home"]'); pg.click('[data-subj="densha"]')
         t("電車は走るに切り替え", pg.evaluate("__app.SUBJ") == "densha" and pg.evaluate("__app.QS.every(q=>q.subj==='densha')") and str(nd) in pg.inner_text("main"))
-        t("教材ごとに最高点が別", "—" in pg.locator(".tile").nth(4).inner_text())
+        t("教材ごとに最高点が別", "—" in pg.locator(".tile").nth(2).inner_text())
         pg.click('[data-go="honbun"]')
         t("傍線部一覧に竹取が混ざらない", pg.locator('[data-pass^="TK"]').count() == 0)
         pg.click('[data-go="exam"]')
@@ -68,8 +59,8 @@ try:
         sw = pg.evaluate("document.documentElement.scrollWidth <= window.innerWidth + 1")
         t("iPhone幅で横スクロールなし（ホーム）", sw)
         # A: Sランク 4択
-        pg.click('[data-mode="A"]'); pg.wait_for_selector(".qtext")
-        t("Sランクモード開始", "Sランク集中" in pg.inner_text("#ttl"))
+        pg.click('[data-mode="P"]'); pg.wait_for_selector(".qtext")
+        t("自分で解くモード開始", "自分で解く" in pg.inner_text("#ttl"))
         # 4択が出るまでとばす
         for _ in range(40):
             if pg.locator(".choice").count(): break
@@ -133,20 +124,10 @@ try:
         # 間違えた問題モード
         pg.evaluate("__app.showQ('E10')"); pg.fill("input[type=text]", "まちがい"); pg.click("#submit")
         pg.click('[data-go="back"]') if pg.locator('[data-go="back"]').count() else None
-        pg.evaluate("__app.startMode('F')"); pg.wait_for_selector(".qtext")
-        ids = pg.evaluate("__app.SES.queue")
-        t("間違えた問題の抽出", "E10" in ids and all(pg.evaluate(f"__app.ST.prog['{i}'].wrong>0") for i in ids))
-        # 試験直前30分
-        pg.evaluate("__app.startMode('H')")
-        t("直前30分モード 30問", pg.evaluate("__app.SES.queue.length") == 30)
-        # ランダム（連続で同じ問題なし）
-        pg.evaluate("__app.startMode('G')")
+        pg.evaluate("__app.ST.recent.length=0; __app.startMode('P')"); pg.wait_for_selector(".qtext")
         q = pg.evaluate("__app.SES.queue")
+        t("間違えた問題が先に出る（直前に出た問題は除く）", "E10" in q[:5])
         t("ランダム出題・連続重複なし", len(q) == nd and all(q[i] != q[i + 1] for i in range(len(q) - 1)))
-        # 人物別
-        pg.evaluate("__app.startMode('CH','ヒナコ')")
-        q = pg.evaluate("__app.SES.queue")
-        t("人物別（ヒナコ）", len(q) > 20 and all("ヒナコ" in pg.evaluate(f"APPDATA.questions.find(x=>x.id==='{i}').ch") for i in q))
         # 再起動後の復元
         before = pg.evaluate("Object.keys(__app.ST.prog).length")
         pg.reload(); pg.wait_for_selector(".tile")
@@ -179,7 +160,7 @@ try:
         t("語句の意味一覧", pg.locator("tbody tr").count() == pg.evaluate("APPDATA.questions.filter(q=>q.subj==='densha'&&q.cat==='語句'&&q.type==='mc').length"))
         # 総合
         pg.click('[data-go="home"]'); pg.click('[data-subj="mix"]')
-        t("総合は2教材", pg.evaluate("__app.QS.length") == ntk + nd)
+        t("総合は2教材", pg.evaluate(f"__app.QS.filter(q=>{BUN}).length") == ntk + nd and f"{ntk + nd}問" in pg.inner_text("main"))
         pg.click('[data-go="exam"]')
         t("総合模試3回", pg.locator('[data-exam^="X"]').count() == 3)
         pg.click('[data-exam="X1"]'); pg.wait_for_selector("#grade")
@@ -204,13 +185,13 @@ try:
         t("バックアップから復元", "復元しました" in pg.inner_text("#rsm") and pg.evaluate("Object.keys(__app.ST.prog).length") == len(json.loads(bk)["data"]["prog"]))
         # 答え自動表示モード
         pg.click('[data-go="home"]'); pg.click('[data-mode="L"]'); pg.wait_for_selector("#autogo")
-        t("答え自動表示の設定画面", pg.locator('[data-pref="autoSec"]').count() == 5)
-        pg.click('[data-pref="autoSec"][data-v="5"]'); pg.click('[data-pref="speak"][data-v="false"]'); pg.click('[data-pref="autoRange"][data-v="V"]')
+        t("答え自動表示の設定画面（速さは速めが標準）", pg.locator('[data-pref="autoSec"]').count() == 5 and pg.locator('[data-pref="rate"][data-v="1.4"][aria-pressed="true"]').count() == 1)
+        pg.click('[data-pref="autoSec"][data-v="5"]'); pg.evaluate("__app.ST.prefs.speak=false")
         pg.click("#autogo"); pg.wait_for_selector("#cd")
         a0 = pg.evaluate("__app.SES.queue[0]"); r0 = pg.evaluate(f"JSON.stringify(__app.ST.prog['{a0}']||null)")
-        t("自動表示：時間前は答えが出ない", pg.locator("#res .result").count() == 0 and pg.evaluate(f"APPDATA.questions.find(x=>x.id==='{a0}').cat") == "語句")
+        t("自動表示：時間前は答えが出ない", pg.locator("#res .result").count() == 0 and pg.evaluate(f"(q=>{BUN})(APPDATA.questions.find(x=>x.id==='{a0}'))"))
         pg.wait_for_selector("#res .result", timeout=9000)
-        t("時間がたつと答えを自動表示（記録はしない）", pg.locator(".choice.right").count() == 1 and pg.evaluate(f"JSON.stringify(__app.ST.prog['{a0}']||null)") == r0)
+        t("時間がたつと答えを自動表示（記録はしない）", "解説" in pg.inner_text("#res") and pg.evaluate(f"JSON.stringify(__app.ST.prog['{a0}']||null)") == r0)
         pg.screenshot(path=f"{SHOT}/09_auto.png", full_page=True)
         pg.wait_for_function("__app.SES && __app.SES.pos===1", timeout=10000)
         t("答えのあと自動で次の問題へ", pg.locator("#res .result").count() == 0)
@@ -223,7 +204,17 @@ try:
         t("自動表示でも×を押すと記録", pg.evaluate(f"__app.ST.prog['{a1}'].wrong") > 0)
         pg.click('[data-go="home"]')
         t("ホームに戻ると自動表示が止まる", pg.evaluate("__app.SES") is None)
-        pg.evaluate("__app.ST.prefs.speak=true")
+        # 音声つき：設問の読み上げ → 待つ → 答えを表示して読み上げ
+        pg.evaluate("""window.__said=[]; speechSynthesis.speak=u=>{window.__said.push(u.text); setTimeout(()=>u.onend&&u.onend(),20)}; speechSynthesis.cancel=()=>{}""")
+        pg.evaluate("__app.ST.prefs.speak=true; __app.ST.prefs.autoSec=3")
+        pg.click('[data-mode="L"]'); pg.click("#autogo"); pg.wait_for_selector("#cd")
+        pg.wait_for_function("window.__said.length>=1"); pg.wait_for_timeout(1500)
+        t("待つモード：設問を読み上げ、すぐには答えを出さない", pg.locator("#res .result").count() == 0 and not any("正解は" in x or "模範解答は" in x for x in pg.evaluate("window.__said")))
+        pg.wait_for_function("window.__said.some(s=>s.includes('正解は')||s.includes('模範解答は'))", timeout=8000)
+        t("待つモード：時間がたつと答えを表示して読み上げ", pg.locator("#res .result").count() == 1)
+        pg.wait_for_function("__app.SES && __app.SES.pos===1", timeout=8000)
+        t("待つモード：読み上げ後に次の問題へ", True)
+        pg.click('[data-go="home"]')
         pg.click('[data-go="help"]')
         t("使い方・分析ページ", "過去問" in pg.inner_text("main"))
         pg.screenshot(path=f"{SHOT}/06_help.png", full_page=True)
@@ -234,7 +225,7 @@ try:
         pg.reload(); pg.wait_for_selector(".tile"); time.sleep(1)
         ctx.set_offline(True)
         pg.reload(); pg.wait_for_selector(".tile", timeout=8000)
-        t("オフラインで起動（Service Worker）", pg.locator(".tile").count() == 6)
+        t("オフラインで起動（Service Worker）", pg.locator(".tile").count() == 3)
         ctx.set_offline(False)
         t("JavaScriptエラーなし " + "; ".join(errs[:3]), not [e for e in errs if "Failed to load resource" not in e])
         # PC幅・ダークモード

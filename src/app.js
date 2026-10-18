@@ -6,29 +6,23 @@ let QS = ALL, SUBJ = "taketori";
 const SUBJECTS = { taketori: "竹取物語", densha: "電車は走る", mix: "総合" };
 const PM = Object.fromEntries(D.passages.map(p => [p.id, p]));
 const KANA = ["ア", "イ", "ウ", "エ", "オ"];
+// 文章問題（本文の読み取り）だけを出す。語句・漢字・仮名遣い・古語・原稿用紙は出さない
+const BUNSHO = ["心情", "理由", "表現", "抜き出し", "視点", "記述", "総合", "現代語訳", "主語・敬語"];
+const isBun = q => BUNSHO.includes(q.cat);
 const MODES = {
-  A: { t: "Sランク集中", d: "最重要の予想問題だけ", f: q => q.rank === "S" },
-  B: { t: "語句の意味", d: "4択と短答をくり返す", f: q => q.cat === "語句" },
-  C: { t: "登場人物別", d: "カズオ・タケシ・ヒナコ・サユリ", f: null },
-  D: { t: "傍線部読解", d: "本文の傍線をタップして解く", f: null },
-  E: { t: "学校テスト再現", d: "模擬試験3回分（100点）", f: null },
-  F: { t: "間違えた問題", d: "まだ習得していない×の問題", f: null },
-  I: { t: "漢字 完全習得", d: "新出漢字の書き取りを全問正解まで", f: null },
-  J: { t: "語句 全問正解まで", d: "語句の4択を、全部正解するまでくり返す", f: null },
-  K: { t: "間違えた語句だけ", d: "×がついた語句だけを復習", f: null },
-  G: { t: "全問題ランダム", d: "全分野からまんべんなく", f: q => true },
-  H: { t: "試験直前30分", d: "Sランクと未習得を優先して30問", f: null },
-  L: { t: "答え自動表示", d: "時間がたつと答えが出て、次へ進む（音声つき）", f: null },
+  P: { t: "自分で解く", d: "設問を読み上げ → 自分で答える → 答えを読み上げ" },
+  L: { t: "待てば答えが出る", d: "設問を読み上げ → しばらく待つ → 答えを表示して読み上げ → 次へ" },
 };
 // ---------- 保存 ----------
 const KEY = "densha-test-v1";
-const DEFPREFS = { tate: true, speak: true, rate: 1, autoSec: 10, autoNext: true, autoRange: "S" };
+const DEFPREFS = { tate: true, speak: true, rate: 1.4, autoSec: 5, autoNext: true };
 let ST = { prog: {}, recent: [], best: {}, exams: {}, prefs: Object.assign({}, DEFPREFS) };
 function load() { try { const s = localStorage.getItem(KEY); if (s) ST = Object.assign(ST, JSON.parse(s)); } catch (e) {} }
 function save() { try { localStorage.setItem(KEY, JSON.stringify(ST)); } catch (e) {} }
 function fixPrefs() {
   ST.prefs = Object.assign({}, DEFPREFS, ST.prefs || {});
   if (!ST.prefs.v2) { ST.prefs.tate = true; ST.prefs.v2 = 1; } // 縦書きを標準に（以前の設定も一度だけ縦書きにする）
+  if (!ST.prefs.v3) { ST.prefs.rate = DEFPREFS.rate; ST.prefs.autoSec = DEFPREFS.autoSec; ST.prefs.speak = true; ST.prefs.v3 = 1; } // 時短：速めの読み上げ・短い待ち時間を標準に
 }
 load(); fixPrefs();
 function setSubj(sj) { SUBJ = SUBJECTS[sj] ? sj : "taketori"; ST.subj = SUBJ; QS = SUBJ === "mix" ? ALL : ALL.filter(q => q.subj === SUBJ); save(); }
@@ -111,11 +105,11 @@ function tateToggle() {
 // ---------- ホーム ----------
 function home() {
   setNav("home"); title(SUBJECTS[SUBJ] + (SUBJ === "mix" ? "（2教材）" : ""));
-  const s = C.stats(QS, ST.prog, now());
+  const pool = QS.filter(isBun);
+  const s = C.stats(pool, ST.prog, now());
   const dl = C.daysLeft(now(), D.examDate);
   const best = Math.max(0, ...D.exams.filter(e => SUBJ === "mix" ? true : e.subj === SUBJ).map(e => ST.best[e.id] || 0));
-  const ranks = { S: 0, A: 0, B: 0 }; QS.forEach(q => ranks[q.rank]++);
-  const modes = Object.entries(MODES).filter(([k]) => !(SUBJ === "mix" && k === "C")).map(([k, m]) => `<button class="mode ${k === "A" || k === "H" ? "s" : ""}" data-mode="${k}"><span class="lt">${k}</span><span><b>${m.t}</b><span class="d">${m.d}</span></span></button>`).join("");
+  const modes = Object.entries(MODES).map(([k, m], i) => `<button class="mode big${i ? "" : " s"}" data-mode="${k}"><span class="lt">${i + 1}</span><span><b>${m.t}</b><span class="d">${m.d}</span></span></button>`).join("");
   const tabs = Object.entries(SUBJECTS).map(([k, t]) => `<button class="subj" data-subj="${k}" aria-pressed="${k === SUBJ}">${k === "taketori" ? "① " : k === "densha" ? "② " : ""}${t}${k === "mix" ? "（2教材）" : ""}</button>`).join("");
   main().innerHTML = `
   <div class="stack">
@@ -127,83 +121,41 @@ function home() {
         <div class="st goal"><i></i><b>中間テスト</b>10月20日〜</div>
       </div>
     </div>
+    <h2>文章問題 <span class="small muted">（${SUBJECTS[SUBJ]}・${pool.length}問）</span></h2>
+    <div class="modes two">${modes}</div>
     <div class="tiles">
-      <div class="tile"><div class="k">Sランク習得率</div><div class="v">${pct(s.sRate)}</div><div class="bar"><span style="width:${pct(s.sRate)}"></span></div></div>
-      <div class="tile"><div class="k">語句の意味 習得率${SUBJ === "taketori" ? "（37語）" : ""}</div><div class="v">${pct(s.vRate)}</div><div class="bar"><span style="width:${pct(s.vRate)}"></span></div></div>
-      <div class="tile"><div class="k">今日の復習</div><div class="v">${s.dueToday}<span class="small muted">問</span></div><div class="k">間違えた問題 ${s.wrongCount}問</div></div>
-      <div class="tile"><div class="k">総合正答率</div><div class="v">${s.answered ? pct(s.accuracy) : "—"}</div><div class="k">解答 ${s.answered}回</div></div>
+      <div class="tile"><div class="k">習得率</div><div class="v">${pct(s.allRate)}</div><div class="bar"><span style="width:${pct(s.allRate)}"></span></div></div>
+      <div class="tile"><div class="k">間違えた問題</div><div class="v">${s.wrongCount}<span class="small muted">問</span></div><div class="k">先に出題されます</div></div>
       <div class="tile"><div class="k">模擬試験の最高点</div><div class="v">${best ? best : "—"}<span class="small muted">${best ? "点" : ""}</span></div><div class="k">100点満点</div></div>
-      <div class="tile"><div class="k">全問題数</div><div class="v">${s.total}<span class="small muted">問</span></div><div class="k">S ${ranks.S}／A ${ranks.A}／B ${ranks.B}</div></div>
     </div>
-    <h2>学習モード <span class="small muted">（${SUBJECTS[SUBJ]}）</span></h2>
-    <div class="modes">${modes}</div>
-    <p class="small muted">「習得」＝連続で正解した問題（試験3日前からは2回連続）。間違えた問題は数問あとにもう一度出ます。記録はこの端末のブラウザに保存されます（「記録」タブでバックアップできます）。</p>
+    <p class="small muted">文章問題＝${BUNSHO.join("・")}（語句・漢字などは出しません）。間違えた問題と復習の時期が来た問題から先に出ます。記録はこの端末のブラウザに保存されます。</p>
   </div>`;
 }
 // ---------- 出題セッション ----------
 let SES = null;
-function startMode(k, extra) {
-  const m = MODES[k];
-  if (k === "C") return pickChar();
-  if (k === "D") return passageList();
-  if (k === "E") return examList();
+function startMode(k) {
   if (k === "L") return autoSetup();
-  let pool, opts = { recent: ST.recent, seed: now() };
-  let until = false;
-  if (k === "I") {
-    pool = QS.filter(q => q.kanji11 || (q.subj === "densha" && q.cat === "漢字" && /^K\d/.test(q.id)));
-    until = true; opts.limit = 0;
-  } else if (k === "J") {
-    pool = QS.filter(q => q.cat === "語句" && q.type === "mc"); until = true;
-  } else if (k === "K") {
-    pool = QS.filter(q => q.cat === "語句" && ST.prog[q.id] && ST.prog[q.id].wrong > 0 && !ST.prog[q.id].mastered);
-    if (!pool.length) { main().innerHTML = `<div class="sheet stack"><h2>間違えた語句はありません</h2><p>「B：語句の意味」か「J：語句 全問正解まで」で練習しましょう。</p><button class="btn pri" data-go="home">ホームへ</button></div>`; return; }
-  } else if (k === "F") {
-    pool = QS.filter(q => ST.prog[q.id] && ST.prog[q.id].wrong > 0 && !ST.prog[q.id].mastered);
-    if (!pool.length) { main().innerHTML = `<div class="sheet stack"><h2>間違えた問題はありません</h2><p>まだ×がついた問題がないか、すべて習得済みです。ほかのモードで解いてみましょう。</p><button class="btn pri" data-go="home">ホームへ</button></div>`; return; }
-  } else if (k === "H") {
-    pool = QS.filter(q => (q.rank === "S" || !(ST.prog[q.id] && ST.prog[q.id].mastered)) && q.cat !== "原稿用紙");
-    opts.sBoost = 15; opts.limit = 30;
-  } else if (k === "CH") {
-    pool = QS.filter(q => (q.ch || []).includes(extra));
-  } else pool = QS.filter(m.f);
-  const queue = C.buildQueue(pool, ST.prog, now(), opts);
-  SES = { mode: k, label: (k === "CH" ? extra + "の問題" : m.t) + "｜" + SUBJECTS[SUBJ], queue, pos: 0, right: 0, done: 0, until, total0: queue.length };
+  const pool = QS.filter(isBun);
+  const queue = C.buildQueue(pool, ST.prog, now(), { recent: ST.recent, seed: now() });
+  SES = { mode: "P", label: MODES.P.t + "｜" + SUBJECTS[SUBJ], queue, pos: 0, right: 0, done: 0, until: false, total0: queue.length };
   showQ();
 }
-function pickChar() {
-  setNav("home"); title("登場人物別");
-  const tk = SUBJ === "taketori";
-  const names = tk ? ["翁", "媼", "かぐや姫", "帝", "くらもちの皇子", "天人"] : ["カズオ", "タケシ", "ヒナコ", "サユリ", "語り手"];
-  const desc = tk ? { 翁: "竹取の翁・育ての親", 媼: "翁の妻・育ての親", かぐや姫: "月の都の者", 帝: "手紙で心を通わせる", くらもちの皇子: "偽りの玉の枝", 天人: "月からの迎え" } : { カズオ: "二人のおばあさん／眠ったふり", タケシ: "おじいさん／唇をかみしめる", ヒナコ: "体調不良／涙", サユリ: "松葉づえのお姉さん／つり革を握りしめる", 語り手: "「僕たち」／「正しさ」" };
-  main().innerHTML = `<div class="stack"><h2>誰の場面を練習する？</h2><div class="modes">${names.map(n => `<button class="mode" data-char="${n}"><span class="lt">${n[0]}</span><span><b>${n}</b><span class="d">${desc[n]}（${QS.filter(q => (q.ch || []).includes(n)).length}問）</span></span></button>`).join("")}</div></div>`;
-}
 // ---------- 答え自動表示モード ----------
-const RANGES = {
-  S: ["Sランク", q => q.rank === "S"],
-  V: ["語句", q => q.cat === "語句" && q.type === "mc"],
-  K: ["漢字", q => q.cat === "漢字"],
-  W: ["間違えた問題", q => ST.prog[q.id] && ST.prog[q.id].wrong > 0 && !ST.prog[q.id].mastered],
-  ALL: ["全問題", q => q.cat !== "原稿用紙"],
-};
 const AUTO = { t: null, iv: null, paused: false, tok: 0 };
 function stopAuto() { clearTimeout(AUTO.t); clearInterval(AUTO.iv); AUTO.t = AUTO.iv = null; AUTO.tok++; }
 function prefChips(key, opts) { return opts.map(([v, t]) => `<button class="chip" data-pref="${key}" data-v="${v}" aria-pressed="${String(ST.prefs[key]) === String(v)}">${t}</button>`).join(""); }
+const RATES = [[1, "ふつう"], [1.4, "速い"], [1.8, "とても速い"]];
 function autoSetup() {
-  setNav("home"); title("答え自動表示");
-  if (!RANGES[ST.prefs.autoRange]) ST.prefs.autoRange = "S";
-  main().innerHTML = `<div class="sheet stack"><h2>答え自動表示</h2>
-    <p class="small">設問が出て（音声ONなら読み上げのあと）、決めた秒数がたつと答えが自動で出ます。その前に自分で答えてもOK。答えが出たあと「○ わかった／× わからなかった」を押すと記録されます（押さなくても進めます）。</p>
-    <div><b>範囲</b><div class="row">${prefChips("autoRange", Object.entries(RANGES).map(([k, [t, f]]) => [k, t + "（" + QS.filter(f).length + "）"]))}</div></div>
-    <div><b>答えが出るまで</b><div class="row">${prefChips("autoSec", [[5, "5秒"], [10, "10秒"], [15, "15秒"], [20, "20秒"], [30, "30秒"]])}</div></div>
+  setNav("home"); title(MODES.L.t);
+  main().innerHTML = `<div class="sheet stack"><h2>${MODES.L.t}</h2>
+    <p class="small">設問を読み上げたあと、決めた秒数がたつと答えが出て読み上げます。終わると次の問題へ。待たずに自分で答えてもOK。「○ わかった／× わからなかった」を押すと記録されます（押さなくても進みます）。</p>
+    <div><b>答えが出るまで</b><div class="row">${prefChips("autoSec", [[3, "3秒"], [5, "5秒"], [8, "8秒"], [10, "10秒"], [15, "15秒"]])}</div></div>
+    <div><b>読み上げの速さ</b><div class="row">${prefChips("rate", RATES)}</div></div>
     <div><b>答えのあと</b><div class="row">${prefChips("autoNext", [[true, "自動で次へ"], [false, "ボタンで次へ"]])}</div></div>
-    <div><b>音声</b><div class="row">${prefChips("speak", [[true, "読み上げる"], [false, "読み上げない"]])}</div></div>
-    <div class="row"><button class="btn pri" id="autogo">はじめる</button><button class="btn" data-go="home">ホームへ</button></div><div id="automsg" class="small"></div></div>`;
+    <div class="row"><button class="btn pri" id="autogo">はじめる（${QS.filter(isBun).length}問）</button><button class="btn" data-go="home">ホームへ</button></div></div>`;
   $("#autogo").onclick = () => {
-    const pool = QS.filter(RANGES[ST.prefs.autoRange][1]);
-    if (!pool.length) { $("#automsg").textContent = "この範囲の問題はありません。ほかの範囲を選んでください。"; return; }
-    const queue = C.buildQueue(pool, ST.prog, now(), { recent: ST.recent, seed: now() });
-    SES = { mode: "L", auto: true, label: "答え自動表示｜" + SUBJECTS[SUBJ], queue, pos: 0, right: 0, done: 0, until: false, total0: queue.length };
+    const queue = C.buildQueue(QS.filter(isBun), ST.prog, now(), { recent: ST.recent, seed: now() });
+    SES = { mode: "L", auto: true, label: MODES.L.t + "｜" + SUBJECTS[SUBJ], queue, pos: 0, right: 0, done: 0, until: false, total0: queue.length };
     AUTO.paused = false; LAST = home;
     showQ(); window.scrollTo(0, 0);
   };
@@ -223,7 +175,7 @@ function autoQ(q) {
 function autoAdvance(p) {
   if (!SES || !SES.auto) return;
   const tok = AUTO.tok;
-  p.then(() => { if (tok !== AUTO.tok || AUTO.paused || !ST.prefs.autoNext) return; AUTO.t = setTimeout(() => { if (tok === AUTO.tok && !AUTO.paused) next(); }, ST.prefs.speak ? 2500 : 5000); });
+  p.then(() => { if (tok !== AUTO.tok || AUTO.paused || !ST.prefs.autoNext) return; AUTO.t = setTimeout(() => { if (tok === AUTO.tok && !AUTO.paused) next(); }, ST.prefs.speak ? 1200 : 4000); });
 }
 function reveal(q) {
   if (!SES || SES.revealed) return;
@@ -365,7 +317,7 @@ function next() {
 }
 function endSession() {
   const r = SES;
-  main().innerHTML = `<div class="sheet stack"><h2>${r.until ? "全問正解しました！" : "おつかれさま！"}</h2><p class="score">${r.right}<span class="small muted">／${r.done}回 正解</span></p>${r.until ? `<p>${r.total0}問すべてに正解するまでくり返しました。</p>` : ""}<p>間違えた問題は「F：間違えた問題」と「今日の復習」に入りました。</p><div class="row"><button class="btn pri" data-mode="${r.mode === "CH" ? "C" : r.mode}">もう一度</button><button class="btn" data-go="home">ホームへ</button></div></div>`;
+  main().innerHTML = `<div class="sheet stack"><h2>${r.until ? "全問正解しました！" : "おつかれさま！"}</h2><p class="score">${r.right}<span class="small muted">／${r.done}回 正解</span></p>${r.until ? `<p>${r.total0}問すべてに正解するまでくり返しました。</p>` : ""}<p>間違えた問題は、次回も先に出題されます。</p><div class="row"><button class="btn pri" data-mode="${r.mode}">もう一度</button><button class="btn" data-go="home">ホームへ</button></div></div>`;
   SES = null;
 }
 // ---------- 傍線部読解 ----------
@@ -520,7 +472,7 @@ function dataView() {
   <div class="sheet stack"><b>記録を消す</b><div id="rz"><button class="btn" id="rst">すべての記録を消す…</button></div></div>
   <div class="sheet stack"><b>表示</b><div class="row"><button class="chip" data-act="tate" aria-pressed="${ST.prefs.tate}">本文を縦書きで表示</button></div></div>
   <div class="sheet stack"><b>音声</b><div class="row">${prefChips("speak", [[true, "設問と答えを読み上げる"], [false, "読み上げない"]])}</div>
-    <div class="row"><span class="small">速さ</span>${prefChips("rate", [[0.8, "ゆっくり"], [1, "ふつう"], [1.2, "はやい"]])}<button class="chip" id="vtest">🔊 試しに聞く</button></div>
+    <div class="row"><span class="small">速さ</span>${prefChips("rate", RATES)}<button class="chip" id="vtest">🔊 試しに聞く</button></div>
     <p class="small muted">端末の日本語音声で読み上げます${TTS ? "" : "（このブラウザは読み上げに対応していません）"}。iPhoneは消音モード（横のスイッチ）だと鳴らないことがあります。漢字の読み問題は、答えがわからないよう漢字を読み上げません。</p></div>
   </div>`;
   $("#vtest").onclick = () => speak("竹取の翁という者がいた。音声のテストです。");
@@ -544,7 +496,7 @@ function help() {
 // ---------- ルーティング ----------
 let LAST = home;
 document.addEventListener("click", e => {
-  const t = e.target.closest("[data-subj],[data-resume],[data-go],[data-mode],[data-char],[data-pass],[data-pass-list],[data-exam],[data-open],[data-backto],[data-list],[data-act],[data-pref]");
+  const t = e.target.closest("[data-subj],[data-resume],[data-go],[data-mode],[data-pass],[data-pass-list],[data-exam],[data-open],[data-backto],[data-list],[data-act],[data-pref]");
   if (!t) return;
   const d = t.dataset;
   if (d.act === "tate") { ST.prefs.tate = !ST.prefs.tate; save(); main().querySelectorAll(".honbun").forEach(h => h.classList.toggle("tate", ST.prefs.tate)); document.querySelectorAll('[data-act="tate"]').forEach(b => b.setAttribute("aria-pressed", ST.prefs.tate)); centerBou(); return; }
@@ -561,7 +513,6 @@ document.addEventListener("click", e => {
   if (d.resume) { if (SES) { showQ(); window.scrollTo(0, 0); } return; }
   if (d.go) { const f = { home, honbun: passageList, exam: examList, list: () => lists(), data: dataView, help }[d.go]; if (f) { SES = null; LAST = f; f(); window.scrollTo(0, 0); } return; }
   if (d.mode) { LAST = home; startMode(d.mode); window.scrollTo(0, 0); return; }
-  if (d.char) { startMode("CH", d.char); return; }
   if (d.pass) { LAST = () => passageView(d.pass); passageView(d.pass); window.scrollTo(0, 0); return; }
   if (d.passList) { passageList(); return; }
   if (d.exam) { startExam(d.exam); window.scrollTo(0, 0); return; }
