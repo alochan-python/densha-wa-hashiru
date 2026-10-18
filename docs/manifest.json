@@ -1,0 +1,21 @@
+{
+ "name": "電車は走る テスト対策",
+ "short_name": "電車は走る",
+ "start_url": "./index.html",
+ "display": "standalone",
+ "background_color": "#F6F8F7",
+ "theme_color": "#2C5D8F",
+ "lang": "ja",
+ "icons": [
+  {
+   "src": "icon-192.png",
+   "sizes": "192x192",
+   "type": "image/png"
+  },
+  {
+   "src": "icon-512.png",
+   "sizes": "512x512",
+   "type": "image/png"
+  }
+ ]
+}

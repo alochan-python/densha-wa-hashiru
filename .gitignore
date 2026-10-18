@@ -1,0 +1,7 @@
+# 教科書本文の全文転記は著作物のためコミットしない
+src/fulltext.txt
+tests/shots/
+build-artifact.html
+__pycache__/
+*.pyc
+.DS_Store

@@ -1,0 +1,62 @@
+<title>電車は走る テスト対策</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="theme-color" content="#2C5D8F">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700&family=Zen+Old+Mincho:wght@400;700&display=swap">
+<style>/*CSS*/</style>
+<header class="top"><div class="in"><h1 id="ttl">電車は走る テスト対策</h1><span class="count" id="cnt"></span><button class="chip" data-go="help">使い方</button></div></header>
+<main class="wrap" id="main"></main>
+<nav class="bottom" aria-label="メニュー"><div class="in">
+  <button data-go="home"><span class="ic">駅</span>ホーム</button>
+  <button data-go="honbun"><span class="ic">傍</span>傍線部</button>
+  <button data-go="exam"><span class="ic">試</span>模擬試験</button>
+  <button data-go="list"><span class="ic">覧</span>一覧</button>
+  <button data-go="data"><span class="ic">録</span>記録</button>
+</div></nav>
+<template id="helptpl">
+<div class="stack prose">
+  <h2>使い方</h2>
+  <ol>
+    <li><b>ホーム</b>でモードを選ぶ。迷ったら <b>A：Sランク集中</b> → <b>B：語句の意味</b> → <b>E：模擬試験</b> の順に。</li>
+    <li>選択問題は答えを押してから<b>「解答する」</b>。書く問題は書いてから「解答する」。答えは解答するまで見えません。</li>
+    <li>書く問題はキーワードで自動チェックしたあと、<b>模範解答と見くらべて ○／× を自分で押す</b>（意味が合っていれば○でOK）。</li>
+    <li>×の問題は数問あとにもう一度出ます。正解が続くと「習得」になり、翌日・3日後…と間をあけて出ます（試験までに必ず一回は戻ってきます）。</li>
+    <li><b>傍線部</b>タブ：本文の傍線（①②…）をタップするとその傍線の問題に飛びます。問題の答え合わせのあと「本文で前後を確認する」で本文に戻れます。</li>
+    <li><b>模擬試験</b>：学校のテストと同じ「漢字→語句→傍線部(A)(B)…→記述→原稿用紙」の順。最後に「採点する」。記述は点数ボタンで自己採点。</li>
+    <li><b>記録</b>タブ：記録のバックアップ（コピーして保存）・復元・CSV。記録はこの端末のブラウザだけに保存されます。</li>
+    <li>本文の「縦書き」ボタンで、教科書と同じ縦書き表示に切りかえられます。</li>
+  </ol>
+  <h2>過去問（一学期期末）から分かった出題の形</h2>
+  <div class="tbl"><table>
+    <thead><tr><th>設問</th><th>大問一（説明文）</th><th>大問二（随筆・物語）</th><th>この対策での扱い</th></tr></thead>
+    <tbody>
+      <tr><td>問1 漢字</td><td>a〜j 10問（読み・書き）</td><td>a〜j 10問</td><td>読み37・書き20問</td></tr>
+      <tr><td>問2 語句の意味</td><td>ⅰ〜ⅳ（3択）</td><td>ⅰ〜ⅳ（3択）</td><td>60語（4択）＋短答</td></tr>
+      <tr><td>傍線部の読解</td><td>(A)〜(H)</td><td>(A)〜(I)</td><td>傍線つき本文15か所</td></tr>
+      <tr><td>気持ちの選択</td><td>—</td><td>「どのような気持ちが伝わるか」4択</td><td>心情40問</td></tr>
+      <tr><td>抜き出し</td><td>段落の初め7字</td><td>初めと終わりの5字・2つ書き抜き</td><td>抜き出し21問</td></tr>
+      <tr><td>指示語</td><td>—</td><td>「これくらい」の指す内容</td><td>指示語・表現21問</td></tr>
+      <tr><td>記述</td><td>10〜20字／50〜75字（台詞形式）</td><td>20字程度／20字以内の台詞／50字以上</td><td>記述20問</td></tr>
+      <tr><td>大問三</td><td colspan="2">原稿用紙の使い方のまちがい探し</td><td>原稿用紙6問</td></tr>
+    </tbody></table></div>
+  <p class="small">先生の特徴：傍線部は「気持ちが表れた行動・表現」「かぎかっこの効果」「伝聞表現」など表現そのものに引かれる。気持ちの選択肢は「本文の一部を使ったひっかけ」（人物や時期を入れかえる）が多い。記述は「本文の言葉を用いて」「台詞の形で」など条件つき。</p>
+  <h2>「電車は走る」で特に大事なところ</h2>
+  <ul>
+    <li><b>行動描写→心情</b>：カズオ「眠ったふりをする」（学びの道しるべ②・253ページ上9行め）、タケシ「唇をかみしめたまま、本を読み始めた」、ヒナコ「うつむいた」、サユリ「つり革を強く握りしめる」。</li>
+    <li><b>語り手と視点人物</b>：語り手は物語の外にいて、視点人物は4人。お姉さんの様子はサユリの目から見たもの。最後に語り手が「僕たち」として出てきて、読者に「あなたの『正しさ』はどこにある？」と問いかける。</li>
+    <li><b>くり返し</b>：「〜は電車の中にいる。」「電車は走る。」「……はずだ。」</li>
+    <li><b>主題</b>：「正しさ」は人の数だけあり、他の人の正しさや「常識（みんなの正しさ）」と一致しないこともある。</li>
+  </ul>
+  <h2>ランクのつけ方</h2>
+  <p class="small"><b>S</b>：過去問と同じ形式で、本文の中心となる場面・学びの道しるべ・図解例で扱われている箇所。<b>A</b>：理解に必要で、出ても不自然でない問題。<b>B</b>：理解を深める応用。ランクは根拠にもとづく相対評価で、的中を約束するものではありません。</p>
+  <h2>注意</h2>
+  <p class="small">本文は学習に必要な部分だけを引用し、教科書のページを示しています。教科書本文で必ず確認してください。「※推し量る問題」は本文にはっきり書かれていないことを本文の言葉から考える問題です。</p>
+</div>
+</template>
+<script>/*CORE*/</script>
+<script>window.APPDATA=/*DATA*/;</script>
+<script>/*APP*/</script>
