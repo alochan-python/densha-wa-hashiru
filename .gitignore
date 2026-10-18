@@ -1,5 +1,6 @@
 # 教科書本文の全文転記は著作物のためコミットしない
 src/fulltext.txt
+src/fulltext_tk.txt
 tests/shots/
 build-artifact.html
 __pycache__/

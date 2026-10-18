@@ -43,7 +43,8 @@ def passage(pid, relabel):
             k = pid + "-" + mm.group(1)
             out += f"<u><b>{relabel[k]}</b>{e(mm.group(2))}</u>" if k in relabel else e(mm.group(2))
         else: out += e(m)
-    return f'<div class="hb">{out}<span class="src g">（重松清「電車は走る」教科書 p.{e(p["page"])}{"・" + e(p["lines"]) if p["lines"] else ""}より一部引用）</span></div>'
+    src = "『竹取物語』" if p.get("subj") == "taketori" else "重松清「電車は走る」"
+    return f'<div class="hb"{' style="background:#fff8e6"' if p.get("kobun") else ""}>{out}<span class="src g">（{src} 教科書 p.{e(p["page"])}{"・" + e(p["lines"]) if p["lines"] else ""}より一部引用）</span></div>'
 def layout(s):
     rel, li, ps = {}, 0, []
     for i in s["items"]:
@@ -73,7 +74,8 @@ def genko(n):
     return '<div class="gen">' + "<span></span>" * (((n + 9) // 10) * 10) + "</div>"
 def paper(ex, kind):
     h = f'<h1><span>{e(ex["title"])}</span><span class="g small">{["問題用紙","解答用紙","模範解答・解説"][kind]}</span></h1>'
-    h += f'<div class="meta g">中学1年 国語　「電車は走る」（重松清）　制限時間 {ex["time"]}分（推定）　100点　　組（　　）番（　　）名前（　　　　　　　　　）</div>'
+    sub = {"densha": "「電車は走る」（重松清）", "taketori": "「竹取物語」", "mix": "「電車は走る」「竹取物語」"}[ex["subj"]]
+    h += f'<div class="meta g">中学1年 国語　{sub}　制限時間 {ex["time"]}分（推定）　100点　　組（　　）番（　　）名前（　　　　　　　　　）</div>'
     if kind == 0: h += '<div class="small g">＊答えは丁寧に、解答欄に収まるように書くこと。　＊数字や記号は、すべて一字とします。　＊配点・制限時間は過去問をもとにした推定です。</div>'
     for s in ex["sections"]:
         rel, ps = layout(s); num = numbering(s)
@@ -126,18 +128,19 @@ def paper(ex, kind):
     return h
 def doc(body, title):
     return f'<!doctype html><html lang="ja"><head><meta charset="utf-8"><title>{e(title)}</title><style>{CSS}</style></head><body>{body}</body></html>'
-def lists():
-    S = [q for q in D["questions"] if q["rank"] == "S" and q["cat"] not in ("語句", "漢字")]
-    h = '<h1><span>Sランク最重要問題一覧</span><span class="g small">電車は走る</span></h1><table><tr><th>ID</th><th style="width:auto">問題</th><th style="width:auto">答え</th><th>p.</th></tr>'
+def lists(sj, nm):
+    QQ = [q for q in D["questions"] if q["subj"] == sj]
+    S = [q for q in QQ if q["rank"] == "S" and q["cat"] not in ("語句", "漢字")]
+    h = f'<h1><span>Sランク最重要問題一覧</span><span class="g small">{nm}</span></h1><table><tr><th>ID</th><th style="width:auto">問題</th><th style="width:auto">答え</th><th>p.</th></tr>'
     for q in S: h += f'<tr><td class="small">{q["id"]}</td><td class="small">{e(q["q"])}</td><td class="small ans">{e(answer_of(q))}</td><td class="small">{e(q["page"])}</td></tr>'
     h += "</table>"
-    h += '<h1 class="brk"><span>語句の意味一覧</span><span class="g small">電車は走る</span></h1><table><tr><th>語句</th><th style="width:auto">本文中の意味</th><th style="width:auto">注意</th><th>p.</th></tr>'
-    for q in D["questions"]:
+    h += f'<h1 class="brk"><span>語句の意味一覧</span><span class="g small">{nm}</span></h1><table><tr><th>語句</th><th style="width:auto">本文中の意味</th><th style="width:auto">注意</th><th>p.</th></tr>'
+    for q in QQ:
         if q["cat"] == "語句" and q["type"] == "mc":
             h += f'<tr><td><b>{e(q["word"])}</b><br><span class="small">{q["rank"]}</span></td><td>{e(q["model"])}</td><td class="small">{e(q["expl"].split("【注意】")[1] if "【注意】" in q["expl"] else "")}</td><td class="small">{e(q["page"])}</td></tr>'
     h += "</table>"
-    h += '<h1 class="brk"><span>漢字一覧</span><span class="g small">電車は走る</span></h1><table><tr><th>問題</th><th style="width:auto">答え</th><th style="width:auto">本文</th><th>p.</th></tr>'
-    for q in D["questions"]:
+    h += f'<h1 class="brk"><span>漢字一覧</span><span class="g small">{nm}</span></h1><table><tr><th>問題</th><th style="width:auto">答え</th><th style="width:auto">本文</th><th>p.</th></tr>'
+    for q in QQ:
         if q["cat"] == "漢字": h += f'<tr><td>{e(q["word"])}</td><td class="ans">{e(q["model"])}</td><td class="small">{e(q["ctx"])}</td><td class="small">{e(q["page"])}</td></tr>'
     return doc(h + "</table>", "一覧")
 files = []
@@ -145,50 +148,49 @@ with sync_playwright() as p:
     b = p.chromium.launch(); pg = b.new_page()
     for ex in D["exams"]:
         for k, nm in enumerate(["問題用紙", "解答用紙", "模範解答"]):
-            fn = f'{OUT}/模擬試験{ex["id"][1]}_{k+1}{nm}.pdf'
+            pre = {"densha": "電車は走る_模擬試験", "taketori": "竹取物語_模擬試験", "mix": "総合模試"}[ex["subj"]]
+            fn = f'{OUT}/{pre}{ex["id"][-1]}_{k+1}{nm}.pdf'
             pg.set_content(doc(paper(ex, k), ex["title"] + nm)); pg.pdf(path=fn, format="A4", print_background=True); files.append(fn)
-    fn = f"{OUT}/一覧_Sランク・語句・漢字.pdf"; pg.set_content(lists()); pg.pdf(path=fn, format="A4", print_background=True); files.append(fn)
+    for sj, nm in (("densha", "電車は走る"), ("taketori", "竹取物語")):
+        fn = f"{OUT}/{nm}_一覧_Sランク・語句・漢字.pdf"; pg.set_content(lists(sj, nm)); pg.pdf(path=fn, format="A4", print_background=True); files.append(fn)
     b.close()
 for f in files: print(os.path.basename(f), os.path.getsize(f) // 1024, "KB")
 
 # ---- 報告書 ----
 from collections import Counter
 qs = D["questions"]
-cats = ["語句","漢字","心情","理由","視点","表現","抜き出し","記述","原稿用紙"]
-cc = Counter(q["cat"] for q in qs); rc = Counter(q["rank"] for q in qs)
-_e = os.path.join(B, "..", "tests", "shots", "e2e.json"); e2e = json.load(open(_e)) if os.path.exists(_e) else []
+e2e = json.load(open(os.path.join(B, "..", "tests", "shots", "e2e.json"))) if os.path.exists(os.path.join(B, "..", "tests", "shots", "e2e.json")) else []
 _u = os.path.join(B, "..", "tests", "shots", "unit.txt"); unit = open(_u).read().strip() if os.path.exists(_u) else "未実行"
-rows = "".join(f"<tr><td>{c}</td><td>{cc[c]}</td><td>{sum(1 for q in qs if q['cat']==c and q['rank']=='S')}</td><td>{sum(1 for q in qs if q['cat']==c and q['rank']=='A')}</td><td>{sum(1 for q in qs if q['cat']==c and q['rank']=='B')}</td></tr>" for c in cats)
+def table(sj):
+    Q_ = [q for q in qs if q["subj"] == sj]; cc = Counter(q["cat"] for q in Q_)
+    rows = "".join(f"<tr><td>{c}</td><td>{n}</td><td>{sum(1 for q in Q_ if q['cat']==c and q['rank']=='S')}</td><td>{sum(1 for q in Q_ if q['cat']==c and q['rank']=='A')}</td><td>{sum(1 for q in Q_ if q['cat']==c and q['rank']=='B')}</td></tr>" for c, n in cc.most_common())
+    rc = Counter(q["rank"] for q in Q_)
+    return f"<table><tr><th>分野</th><th>問題数</th><th>S</th><th>A</th><th>B</th></tr>{rows}<tr><td><b>合計</b></td><td><b>{len(Q_)}</b></td><td>{rc['S']}</td><td>{rc['A']}</td><td>{rc['B']}</td></tr></table>"
 e2erows = "".join(f"<tr><td>{e(n)}</td><td>{'成功' if ok else '失敗'}</td></tr>" for n, ok in e2e)
-rep = f"""<h1><span>「電車は走る」テスト対策 報告書</span><span class="g small">2026年10月18日</span></h1>
+rep = f"""<h1><span>国語中間テスト対策 報告書（竹取物語・電車は走る）</span><span class="g small">2026年10月18日</span></h1>
 <h2>1. 作成したもの</h2>
-<p>学習アプリ（スマホ・PC対応、8モード、記録・復習機能つき）／予想問題 {len(qs)}問／模擬試験3回分（各100点）と印刷用PDF（問題用紙・解答用紙・模範解答）／Sランク・語句・漢字一覧PDF／この報告書。</p>
-<h2>2. 問題数</h2>
-<table><tr><th>分野</th><th>問題数</th><th>S</th><th>A</th><th>B</th></tr>{rows}<tr><td><b>合計</b></td><td><b>{len(qs)}</b></td><td>{rc['S']}</td><td>{rc['A']}</td><td>{rc['B']}</td></tr></table>
-<p class="small">依頼の目標（語句50・心情40・理由30・視点20・指示語表現20・抜き出し20・記述20）に対し、理由は28問（本文に根拠がある設問だけに絞り、2問は抜き出しに移動）。語句は4択60＋短答19、漢字57・原稿用紙6を追加（過去問の問1・大問三に対応）。</p>
-<h2>3. 本文照合</h2>
-<p>教科書252〜257ページを画像から全文読み取り、問題作成用に転記しました（判読できない箇所はありませんでした）。傍線用の本文引用15か所・語句と漢字の文脈 136か所は、転記した本文と一字一句一致することをプログラムで確認済み（不一致0）。抜き出し問題の正答が引用本文に含まれること、記述・短答の模範解答が自分の採点キーワードを満たし字数制限内であることも全問自動チェックしました。全{len(qs)}問を本文の場面と照合し、ページを記載しています。p.252は題名のページで、ページ番号が写真に写っていないため、学びの道しるべ（「253ページ・上9行め」）から逆算しました。</p>
-<p class="small">注意：おばさんの表情が変わった理由など、本文にはっきり書かれていない部分を考える問題（推論問題）には、アプリ内で「※推し量る問題」と表示しています。</p>
-<h2>4. 過去問の出題傾向（一学期期末 2026.7.7）</h2>
-<ul>
-<li>大問一（説明文「1000円の価値を考える」）・大問二（随筆「字のない葉書」）とも、問1 漢字10問（読み・書き混合）、問2 語句の意味（ⅰ〜ⅳ、ア〜ウの3択）。</li>
-<li>本文に(A)(B)…の傍線を引き、「気持ちを具体的に表した20字以内の部分の初めと終わり5字」「表現から伝わる気持ち（4択）」「『 』をつけた理由（20字程度）」「指示語の具体的内容」「伝聞表現の抜き出し」「台詞の形で20字以内」「50字以上の心情説明」など。</li>
-<li>ひっかけ選択肢は、本文の言葉を使いながら人物・時期・気持ちの向きを入れかえたもの。</li>
-<li>大問三：原稿用紙の使い方のまちがい探し。</li>
-</ul>
-<p class="small">アプリの模擬試験はこの組み立てを再現しています。違い：語句の意味は練習のため4択、漢字は本文中ではなく一覧で出題、配点・時間（50分）は推定。</p>
-<h2>5. テスト結果</h2>
-<p>単体テスト：{e(unit)}／E2Eテスト（iPhone幅・iPad幅・PC幅、ダークモード、オフライン）：成功 {sum(1 for _, o in e2e if o)}・失敗 {sum(1 for _, o in e2e if not o)}。途中で見つかった失敗（記述模範解答18問の字数オーバー、復習間隔の計算、本文から問題を開いた後の戻り先、短答1問のキーワード）はすべて修正して再テスト済み。</p>
+<p>学習アプリ（教材切り替え：①竹取物語／②電車は走る／総合、11モード）／予想問題 {len(qs)}問（竹取物語 {sum(1 for q in qs if q['subj']=='taketori')}問・電車は走る {sum(1 for q in qs if q['subj']=='densha')}問）／模擬試験9回分（電車は走る3・竹取物語3・総合3、各100点）と印刷用PDF（問題用紙・解答用紙・模範解答）／教材別の一覧PDF／この報告書。</p>
+<h2>2. 竹取物語の問題数</h2>{table("taketori")}
+<p class="small">依頼の目標との対応：語句37語（4択37＋短答37）、漢字書き取り11問（資料どおり）＋読み30、歴史的仮名遣い・現代語訳・古語・主語敬語 計50、心情・行動理由 31、傍線部読解・抜き出し 25、展開・表現・総合・記述 33。「補強」と表示した問題は、過去問にない古文の形式（仮名遣い・現代語訳・主語・敬語）。</p>
+<h2>3. 電車は走るの問題数</h2>{table("densha")}
+<p class="small">今回の資料（短い意味暗記テスト）にあった「うつむく」「ぐあい」の2語を追加し、暗記テストの答えを解説に加えました。既存の問題・記録はそのまま残しています。</p>
+<h2>4. 本文照合</h2>
+<p>竹取物語は教科書118〜131ページを画像から全文読み取り、転記しました（判読できない箇所なし）。傍線用の引用、語句・漢字・仮名遣いの文脈など両教材あわせて361か所を、転記本文と一字一句一致するかプログラムで確認（不一致0）。漢字11問・語句37語が資料と完全に一致することも自動チェックしています。古文の現代語訳は教科書下段の現代語訳に合わせました。</p>
+<h2>5. 竹取物語の出題ポイント</h2>
+<ul><li>新出漢字11字（筒・嘆・遣・髪・錠・伴・託・献・尋・吐・煙）</li>
+<li>古文4か所（119・123・125・126ページ）の歴史的仮名遣いと現代語訳</li>
+<li>古語と現代語で異なる意味の語（131ページ）：うつくし・いとほし・かなし・おどろく</li>
+<li>難題の理由（「親の勧めを一方的に拒むのはどうかと思い、わざとあんな要求をした」）、帝の誘いに応じなかった理由（125ページの手紙）</li>
+<li>羽衣を着る前後の心情の変化、翁と媼の悲しみ（髪が白くなる・病床にふせる）</li>
+<li>不死の薬を燃やした理由と富士の山の由来（士に富む山・不死の山）</li>
+<li>学びの道しるべ③「最も悲しんだのは誰か」</li></ul>
+<h2>6. テスト結果</h2>
+<p>単体テスト：{e(unit)}／E2Eテスト：成功 {sum(1 for _, o in e2e if o)}・失敗 {sum(1 for _, o in e2e if not o)}。途中で見つかった失敗（竹取の記述模範解答6問の字数オーバー）は修正して再テスト済み。</p>
 <table><tr><th style="width:auto">E2Eテスト項目</th><th>結果</th></tr>{e2erows}</table>
-<h2>6. 使い方</h2>
-<ol><li>アプリのリンクを開く（スマホならホーム画面に追加すると便利）。</li><li>おすすめ順：A Sランク集中 → B 語句の意味 → D 傍線部読解 → E 模擬試験 → 試験当日の朝に H 直前30分。</li><li>書く問題は模範解答と見くらべて自分で○×を押す。</li><li>紙で練習するときはPDFの問題用紙・解答用紙を印刷し、模範解答で丸つけ。</li></ol>
-<h2>7. まだできていないこと・制限</h2>
-<ul><li>記述の採点はキーワードと自己採点の組み合わせで、意味の自動判定はできません（API不使用のため）。</li>
-<li>公開リンク版ではオフライン（Service Worker）と印刷ボタンが使えません。オフラインで使うときは同梱フォルダの index.html を使い、印刷は同梱のPDFを使ってください。</li>
-<li>学習記録はその端末のブラウザに保存されます。端末を変えるときは「記録」タブのバックアップ・復元を使います。</li>
-<li>出題の的中は保証できません。ランクは過去問の形式・本文の重要度にもとづく相対評価です。</li></ul>
+<h2>7. 制限</h2>
+<ul><li>記述はキーワード判定と自己採点の組み合わせ（API不使用）。</li><li>公開リンク版ではオフラインと印刷ボタンは使えません。印刷は同梱PDF、オフラインは同梱フォルダの index.html を使ってください。</li><li>学習記録はその端末のブラウザに保存されます。</li><li>出題の的中は保証できません。</li></ul>
 """
 with sync_playwright() as p:
     b = p.chromium.launch(); pg = b.new_page()
-    pg.set_content(doc(rep, "報告書")); pg.pdf(path=f"{OUT}/報告書（出題分析・テスト結果・使い方）.pdf", format="A4", print_background=True); b.close()
+    pg.set_content(doc(rep, "報告書")); pg.pdf(path=f"{OUT}/報告書（竹取物語・電車は走る）.pdf", format="A4", print_background=True); b.close()
 print("report ok")

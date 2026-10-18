@@ -19,7 +19,50 @@ try:
         pg.on("console", lambda m: errs.append(m.text) if m.type == "error" and "fonts" not in m.text else None)
         pg.goto(URL); pg.wait_for_selector(".tile")
         t("起動・ホーム表示", pg.locator(".tile").count() == 6)
-        t("全問題数の表示", "292" in pg.inner_text("main"))
+        ntk = pg.evaluate("APPDATA.questions.filter(q=>q.subj==='taketori').length"); nd = pg.evaluate("APPDATA.questions.filter(q=>q.subj==='densha').length")
+        t(f"初期教材は竹取物語（{ntk}問）", pg.evaluate("__app.SUBJ") == "taketori" and str(ntk) in pg.inner_text("main"))
+        pg.screenshot(path=f"{SHOT}/00_home_tk.png", full_page=True)
+        # 竹取：漢字11問 完全習得（全問正解までくり返す）
+        pg.click('[data-mode="I"]'); pg.wait_for_selector(".qtext")
+        q0 = pg.evaluate("__app.SES.queue.slice()")
+        t("漢字11問モードは11問", len(q0) == 11 and all(i.startswith("TK") for i in q0))
+        first = q0[0]
+        pg.fill("input[type=text]", "まちがい"); pg.click("#submit"); pg.click("#next")
+        t("間違えた漢字は最後にもう一度", pg.evaluate("__app.SES.queue.length") == 12 and pg.evaluate("__app.SES.queue[11]") == first)
+        for _ in range(11):
+            cur = pg.evaluate("__app.SES.queue[__app.SES.pos]")
+            pg.fill("input[type=text]", pg.evaluate(f"APPDATA.questions.find(x=>x.id==='{cur}').model")); pg.click("#submit"); pg.click("#next")
+        t("全問正解で終了", "全問正解しました" in pg.inner_text("main"))
+        # 語句37
+        pg.click('[data-go="home"]'); pg.click('[data-mode="J"]'); pg.wait_for_selector(".qtext")
+        t("語句37語モード", pg.evaluate("__app.SES.queue.length") == 37)
+        pg.click('[data-go="home"]')
+        # 古文の傍線表示
+        pg.evaluate("__app.showQ('TG06')")
+        t("古文の傍線部表示", pg.locator(".honbun.kobun").count() == 1 and "うつくしうてゐたり" in pg.inner_text(".bou.on"))
+        pg.screenshot(path=f"{SHOT}/08_kobun.png", full_page=True)
+        pg.evaluate("__app.showQ('TH07')"); pg.fill("input[type=text]", "いたり"); pg.click("#submit")
+        t("歴史的仮名遣いの判定", "正解" in pg.inner_text(".mark"))
+        # 竹取の模擬試験
+        pg.evaluate("__app.startExam('TM1')"); pg.wait_for_selector("#grade")
+        data = pg.evaluate("APPDATA.exams.find(e=>e.id==='TM1')")
+        for s_ in data["sections"]:
+            for qid in s_["points"]:
+                qq = pg.evaluate(f"APPDATA.questions.find(x=>x.id==='{qid}')")
+                if qq["type"] == "mc": pg.locator(f'[data-mc="{qid}"]').nth(qq["answer"]).click()
+                else: pg.fill(f"#ea-{qid}", qq["model"])
+        pg.click("#grade")
+        t("竹取物語 模擬試験の採点（全問模範解答→100点）", int(pg.inner_text("#exres .score")) == 100)
+        pg.click("#saveex")
+        # 教材切り替えと混在防止
+        pg.click('[data-go="home"]'); pg.click('[data-subj="densha"]')
+        t("電車は走るに切り替え", pg.evaluate("__app.SUBJ") == "densha" and pg.evaluate("__app.QS.every(q=>q.subj==='densha')") and str(nd) in pg.inner_text("main"))
+        t("教材ごとに最高点が別", "—" in pg.locator(".tile").nth(4).inner_text())
+        pg.click('[data-go="honbun"]')
+        t("傍線部一覧に竹取が混ざらない", pg.locator('[data-pass^="TK"]').count() == 0)
+        pg.click('[data-go="exam"]')
+        t("模試一覧に竹取が混ざらない", pg.locator('[data-exam^="TM"]').count() == 0 and pg.locator('[data-exam^="M"]').count() == 3)
+        pg.click('[data-go="home"]')
         t("残り日数の表示", "テストまで" in pg.inner_text("#cnt"))
         pg.screenshot(path=f"{SHOT}/01_home.png", full_page=True)
         sw = pg.evaluate("document.documentElement.scrollWidth <= window.innerWidth + 1")
@@ -81,7 +124,7 @@ try:
         # ランダム（連続で同じ問題なし）
         pg.evaluate("__app.startMode('G')")
         q = pg.evaluate("__app.SES.queue")
-        t("ランダム出題・連続重複なし", len(q) == 292 and all(q[i] != q[i + 1] for i in range(len(q) - 1)))
+        t("ランダム出題・連続重複なし", len(q) == nd and all(q[i] != q[i + 1] for i in range(len(q) - 1)))
         # 人物別
         pg.evaluate("__app.startMode('CH','ヒナコ')")
         q = pg.evaluate("__app.SES.queue")
@@ -90,6 +133,7 @@ try:
         before = pg.evaluate("Object.keys(__app.ST.prog).length")
         pg.reload(); pg.wait_for_selector(".tile")
         after = pg.evaluate("Object.keys(__app.ST.prog).length")
+        t("再起動後も選んだ教材を保持", pg.evaluate("__app.SUBJ") == "densha")
         t(f"再起動後の学習履歴復元（{after}問）", before == after and after >= 4)
         # 模擬試験
         pg.click('[data-go="exam"]'); pg.click('[data-exam="M1"]'); pg.wait_for_selector("#grade")
@@ -114,7 +158,24 @@ try:
         t("iPhone幅で横スクロールなし（模擬試験）", sw)
         # 一覧
         pg.click('[data-go="list"]'); pg.click('[data-list="V"]')
-        t("語句の意味一覧", pg.locator("tbody tr").count() == 60)
+        t("語句の意味一覧", pg.locator("tbody tr").count() == pg.evaluate("APPDATA.questions.filter(q=>q.subj==='densha'&&q.cat==='語句'&&q.type==='mc').length"))
+        # 総合
+        pg.click('[data-go="home"]'); pg.click('[data-subj="mix"]')
+        t("総合は2教材", pg.evaluate("__app.QS.length") == ntk + nd)
+        pg.click('[data-go="exam"]')
+        t("総合模試3回", pg.locator('[data-exam^="X"]').count() == 3)
+        pg.click('[data-exam="X1"]'); pg.wait_for_selector("#grade")
+        data = pg.evaluate("APPDATA.exams.find(e=>e.id==='X1')")
+        for s_ in data["sections"]:
+            for qid in s_["points"]:
+                qq = pg.evaluate(f"APPDATA.questions.find(x=>x.id==='{qid}')")
+                if qq["type"] == "mc": pg.locator(f'[data-mc="{qid}"]').nth(qq["answer"]).click()
+                else: pg.fill(f"#ea-{qid}", qq["model"])
+        pg.click("#grade")
+        t("総合模試の採点（全問模範解答→100点）", int(pg.inner_text("#exres .score")) == 100)
+        pg.screenshot(path=f"{SHOT}/09_mix_exam.png")
+        t("iPhone幅で横スクロールなし（総合模試）", pg.evaluate("document.documentElement.scrollWidth <= window.innerWidth + 1"))
+        pg.click('[data-go="home"]'); pg.click('[data-subj="densha"]')
         # バックアップ・復元・CSV
         pg.click('[data-go="data"]')
         bk = pg.input_value("#bk"); csv = pg.input_value("#csv")

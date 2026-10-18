@@ -1,7 +1,9 @@
 (function () {
 "use strict";
 const D = window.APPDATA, C = window.Core;
-const QS = D.questions, QM = Object.fromEntries(QS.map(q => [q.id, q]));
+const ALL = D.questions, QM = Object.fromEntries(ALL.map(q => [q.id, q]));
+let QS = ALL, SUBJ = "taketori";
+const SUBJECTS = { taketori: "竹取物語", densha: "電車は走る", mix: "総合" };
 const PM = Object.fromEntries(D.passages.map(p => [p.id, p]));
 const KANA = ["ア", "イ", "ウ", "エ", "オ"];
 const MODES = {
@@ -11,6 +13,9 @@ const MODES = {
   D: { t: "傍線部読解", d: "本文の傍線をタップして解く", f: null },
   E: { t: "学校テスト再現", d: "模擬試験3回分（100点）", f: null },
   F: { t: "間違えた問題", d: "まだ習得していない×の問題", f: null },
+  I: { t: "漢字 完全習得", d: "新出漢字の書き取りを全問正解まで", f: null },
+  J: { t: "語句 全問正解まで", d: "語句の4択を、全部正解するまでくり返す", f: null },
+  K: { t: "間違えた語句だけ", d: "×がついた語句だけを復習", f: null },
   G: { t: "全問題ランダム", d: "全分野からまんべんなく", f: q => true },
   H: { t: "試験直前30分", d: "Sランクと未習得を優先して30問", f: null },
 };
@@ -20,6 +25,9 @@ let ST = { prog: {}, recent: [], best: {}, exams: {}, prefs: { tate: false } };
 function load() { try { const s = localStorage.getItem(KEY); if (s) ST = Object.assign(ST, JSON.parse(s)); } catch (e) {} }
 function save() { try { localStorage.setItem(KEY, JSON.stringify(ST)); } catch (e) {} }
 load();
+function setSubj(sj) { SUBJ = SUBJECTS[sj] ? sj : "taketori"; ST.subj = SUBJ; QS = SUBJ === "mix" ? ALL : ALL.filter(q => q.subj === SUBJ); save(); }
+setSubj(ST.subj || "taketori");
+function subjOf(q) { return q.subj === "taketori" ? "竹取物語" : "電車は走る"; }
 // ---------- 小道具 ----------
 const $ = (s, el) => (el || document).querySelector(s);
 const esc = s => String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -44,21 +52,24 @@ function passageHTML(pid, opt) {
     return `<span class="${cls}" data-key="${esc(key)}" role="button" tabindex="0"><span class="lab">${esc(lab)}</span>${esc(x.t)}</span>`;
   }).join("");
   const tate = ST.prefs.tate ? " tate" : "";
-  return `<div class="honbun${tate}" data-pid="${pid}">${html}<span class="src">（重松清「電車は走る」教科書 p.${esc(p.page)}${p.lines ? "・" + esc(p.lines) : ""}より一部引用）</span></div>`;
+  const src = p.subj === "taketori" ? "『竹取物語』" : "重松清「電車は走る」";
+  return `<div class="honbun${tate}${p.kobun ? " kobun" : ""}" data-pid="${pid}">${p.kobun ? `<span class="kb">古文</span>` : ""}${html}<span class="src">（${src} 教科書 p.${esc(p.page)}${p.lines ? "・" + esc(p.lines) : ""}より一部引用）</span></div>`;
 }
 function tateToggle() {
   return `<button class="chip noprint" data-act="tate" aria-pressed="${ST.prefs.tate}">縦書き</button>`;
 }
 // ---------- ホーム ----------
 function home() {
-  setNav("home"); title("電車は走る テスト対策");
+  setNav("home"); title(SUBJECTS[SUBJ] + (SUBJ === "mix" ? "（2教材）" : ""));
   const s = C.stats(QS, ST.prog, now());
   const dl = C.daysLeft(now(), D.examDate);
-  const best = Math.max(0, ...Object.values(ST.best || {}));
+  const best = Math.max(0, ...D.exams.filter(e => SUBJ === "mix" ? true : e.subj === SUBJ).map(e => ST.best[e.id] || 0));
   const ranks = { S: 0, A: 0, B: 0 }; QS.forEach(q => ranks[q.rank]++);
-  const modes = Object.entries(MODES).map(([k, m]) => `<button class="mode ${k === "A" || k === "H" ? "s" : ""}" data-mode="${k}"><span class="lt">${k}</span><span><b>${m.t}</b><span class="d">${m.d}</span></span></button>`).join("");
+  const modes = Object.entries(MODES).filter(([k]) => !(SUBJ === "mix" && k === "C")).map(([k, m]) => `<button class="mode ${k === "A" || k === "H" ? "s" : ""}" data-mode="${k}"><span class="lt">${k}</span><span><b>${m.t}</b><span class="d">${m.d}</span></span></button>`).join("");
+  const tabs = Object.entries(SUBJECTS).map(([k, t]) => `<button class="subj" data-subj="${k}" aria-pressed="${k === SUBJ}">${k === "taketori" ? "① " : k === "densha" ? "② " : ""}${t}${k === "mix" ? "（2教材）" : ""}</button>`).join("");
   main().innerHTML = `
   <div class="stack">
+    <div class="subjs" role="group" aria-label="教材">${tabs}</div>
     <div class="sheet">
       <div class="route">
         <div class="st now"><i></i><b>きょう</b>${new Date().toLocaleDateString("ja-JP", { month: "numeric", day: "numeric" })}</div>
@@ -68,13 +79,13 @@ function home() {
     </div>
     <div class="tiles">
       <div class="tile"><div class="k">Sランク習得率</div><div class="v">${pct(s.sRate)}</div><div class="bar"><span style="width:${pct(s.sRate)}"></span></div></div>
-      <div class="tile"><div class="k">語句の意味 習得率</div><div class="v">${pct(s.vRate)}</div><div class="bar"><span style="width:${pct(s.vRate)}"></span></div></div>
+      <div class="tile"><div class="k">語句の意味 習得率${SUBJ === "taketori" ? "（37語）" : ""}</div><div class="v">${pct(s.vRate)}</div><div class="bar"><span style="width:${pct(s.vRate)}"></span></div></div>
       <div class="tile"><div class="k">今日の復習</div><div class="v">${s.dueToday}<span class="small muted">問</span></div><div class="k">間違えた問題 ${s.wrongCount}問</div></div>
       <div class="tile"><div class="k">総合正答率</div><div class="v">${s.answered ? pct(s.accuracy) : "—"}</div><div class="k">解答 ${s.answered}回</div></div>
       <div class="tile"><div class="k">模擬試験の最高点</div><div class="v">${best ? best : "—"}<span class="small muted">${best ? "点" : ""}</span></div><div class="k">100点満点</div></div>
       <div class="tile"><div class="k">全問題数</div><div class="v">${s.total}<span class="small muted">問</span></div><div class="k">S ${ranks.S}／A ${ranks.A}／B ${ranks.B}</div></div>
     </div>
-    <h2>学習モード</h2>
+    <h2>学習モード <span class="small muted">（${SUBJECTS[SUBJ]}）</span></h2>
     <div class="modes">${modes}</div>
     <p class="small muted">「習得」＝連続で正解した問題（試験3日前からは2回連続）。間違えた問題は数問あとにもう一度出ます。記録はこの端末のブラウザに保存されます（「記録」タブでバックアップできます）。</p>
   </div>`;
@@ -87,7 +98,16 @@ function startMode(k, extra) {
   if (k === "D") return passageList();
   if (k === "E") return examList();
   let pool, opts = { recent: ST.recent, seed: now() };
-  if (k === "F") {
+  let until = false;
+  if (k === "I") {
+    pool = QS.filter(q => q.kanji11 || (q.subj === "densha" && q.cat === "漢字" && /^K\d/.test(q.id)));
+    until = true; opts.limit = 0;
+  } else if (k === "J") {
+    pool = QS.filter(q => q.cat === "語句" && q.type === "mc"); until = true;
+  } else if (k === "K") {
+    pool = QS.filter(q => q.cat === "語句" && ST.prog[q.id] && ST.prog[q.id].wrong > 0 && !ST.prog[q.id].mastered);
+    if (!pool.length) { main().innerHTML = `<div class="sheet stack"><h2>間違えた語句はありません</h2><p>「B：語句の意味」か「J：語句 全問正解まで」で練習しましょう。</p><button class="btn pri" data-go="home">ホームへ</button></div>`; return; }
+  } else if (k === "F") {
     pool = QS.filter(q => ST.prog[q.id] && ST.prog[q.id].wrong > 0 && !ST.prog[q.id].mastered);
     if (!pool.length) { main().innerHTML = `<div class="sheet stack"><h2>間違えた問題はありません</h2><p>まだ×がついた問題がないか、すべて習得済みです。ほかのモードで解いてみましょう。</p><button class="btn pri" data-go="home">ホームへ</button></div>`; return; }
   } else if (k === "H") {
@@ -97,13 +117,14 @@ function startMode(k, extra) {
     pool = QS.filter(q => (q.ch || []).includes(extra));
   } else pool = QS.filter(m.f);
   const queue = C.buildQueue(pool, ST.prog, now(), opts);
-  SES = { mode: k, label: k === "CH" ? extra + "の問題" : m.t, queue, pos: 0, right: 0, done: 0 };
+  SES = { mode: k, label: (k === "CH" ? extra + "の問題" : m.t) + "｜" + SUBJECTS[SUBJ], queue, pos: 0, right: 0, done: 0, until, total0: queue.length };
   showQ();
 }
 function pickChar() {
   setNav("home"); title("登場人物別");
-  const names = ["カズオ", "タケシ", "ヒナコ", "サユリ", "語り手"];
-  const desc = { カズオ: "二人のおばあさん／眠ったふり", タケシ: "おじいさん／唇をかみしめる", ヒナコ: "体調不良／涙", サユリ: "松葉づえのお姉さん／つり革を握りしめる", 語り手: "「僕たち」／「正しさ」" };
+  const tk = SUBJ === "taketori";
+  const names = tk ? ["翁", "媼", "かぐや姫", "帝", "くらもちの皇子", "天人"] : ["カズオ", "タケシ", "ヒナコ", "サユリ", "語り手"];
+  const desc = tk ? { 翁: "竹取の翁・育ての親", 媼: "翁の妻・育ての親", かぐや姫: "月の都の者", 帝: "手紙で心を通わせる", くらもちの皇子: "偽りの玉の枝", 天人: "月からの迎え" } : { カズオ: "二人のおばあさん／眠ったふり", タケシ: "おじいさん／唇をかみしめる", ヒナコ: "体調不良／涙", サユリ: "松葉づえのお姉さん／つり革を握りしめる", 語り手: "「僕たち」／「正しさ」" };
   main().innerHTML = `<div class="stack"><h2>誰の場面を練習する？</h2><div class="modes">${names.map(n => `<button class="mode" data-char="${n}"><span class="lt">${n[0]}</span><span><b>${n}</b><span class="d">${desc[n]}（${QS.filter(q => (q.ch || []).includes(n)).length}問）</span></span></button>`).join("")}</div></div>`;
 }
 function showQ(single) {
@@ -124,7 +145,7 @@ function showQ(single) {
   }
   main().innerHTML = `<div class="stack">
     ${single ? "" : `<div class="progress"><span style="width:${(n - 1) / total * 100}%"></span></div>`}
-    <div class="qhead">${single ? "" : `<b>${n} / ${total}</b>`}<span class="tag ${q.rank}">${q.rank}ランク</span><span class="tag">${esc(q.cat)}</span><span>難易度${"★".repeat(q.diff)}</span><span>${esc(pageLabel(q))}</span><span>${esc(q.id)}</span>${q.p ? tateToggle() : ""}</div>
+    <div class="qhead">${single ? "" : SES.until ? `<b>のこり ${total - n + 1}問</b>` : `<b>${n} / ${total}</b>`}<span class="tag ${q.rank}">${q.rank}ランク</span><span class="tag">${esc(q.cat)}</span>${/^補強/.test(q.reason) ? `<span class="tag B">補強</span>` : ""}${SUBJ === "mix" ? `<span class="tag">${subjOf(q)}</span>` : ""}<span>難易度${"★".repeat(q.diff)}</span><span>${esc(pageLabel(q))}</span><span>${esc(q.id)}</span>${q.p ? tateToggle() : ""}</div>
     ${body}
     <div class="sheet">
       <div class="qtext">${q.p && q.u ? `<span class="tag">傍線${esc(q.u)}</span> ` : ""}${esc(q.q)}</div>
@@ -182,7 +203,7 @@ function answer(q, val, single) {
   </div>`;
   const finish = ok => {
     record(q, ok);
-    if (!single) { SES.done++; if (ok) SES.right++; else SES.queue = C.requeue(SES.queue, SES.pos, q.id, 4); const nb = $("#next"); if (nb) nb.disabled = false; }
+    if (!single) { SES.done++; if (ok) SES.right++; else SES.queue = SES.until ? SES.queue.concat([q.id]) : C.requeue(SES.queue, SES.pos, q.id, 4); const nb = $("#next"); if (nb) nb.disabled = false; }
   };
   if (g.auto) finish(!!g.ok);
   else res.querySelectorAll("[data-self]").forEach(b => b.onclick = () => {
@@ -200,7 +221,7 @@ function next() {
 }
 function endSession() {
   const r = SES;
-  main().innerHTML = `<div class="sheet stack"><h2>おつかれさま！</h2><p class="score">${r.right}<span class="small muted">／${r.done}問 正解</span></p><p>間違えた問題は「F：間違えた問題」と「今日の復習」に入りました。</p><div class="row"><button class="btn pri" data-mode="${r.mode === "CH" ? "C" : r.mode}">もう一度</button><button class="btn" data-go="home">ホームへ</button></div></div>`;
+  main().innerHTML = `<div class="sheet stack"><h2>${r.until ? "全問正解しました！" : "おつかれさま！"}</h2><p class="score">${r.right}<span class="small muted">／${r.done}回 正解</span></p>${r.until ? `<p>${r.total0}問すべてに正解するまでくり返しました。</p>` : ""}<p>間違えた問題は「F：間違えた問題」と「今日の復習」に入りました。</p><div class="row"><button class="btn pri" data-mode="${r.mode === "CH" ? "C" : r.mode}">もう一度</button><button class="btn" data-go="home">ホームへ</button></div></div>`;
   SES = null;
 }
 // ---------- 傍線部読解 ----------
@@ -208,7 +229,7 @@ let BACK = null;
 function passageList() {
   setNav("honbun"); title("傍線部読解");
   main().innerHTML = `<div class="stack"><h2>本文をえらぶ</h2><p class="small muted">本文の傍線部をタップすると、その傍線の問題が出ます。</p>
-  <div class="modes">${D.passages.map(p => { const n = QS.filter(q => q.p === p.id).length; return `<button class="mode" data-pass="${p.id}"><span class="lt">${p.title[0]}</span><span><b>${esc(p.title)}</b><span class="d">p.${esc(p.page)}　問題${n}問</span></span></button>`; }).join("")}</div></div>`;
+  <div class="modes">${D.passages.filter(p => SUBJ === "mix" || p.subj === SUBJ).map(p => { const n = QS.filter(q => q.p === p.id).length; return `<button class="mode" data-pass="${p.id}"><span class="lt">${p.title[0]}</span><span><b>${esc(p.title)}</b><span class="d">${SUBJ === "mix" ? (p.subj === "taketori" ? "竹取物語・" : "電車は走る・") : ""}p.${esc(p.page)}　問題${n}問${p.kobun ? "・古文" : ""}</span></span></button>`; }).join("")}</div></div>`;
 }
 function passageView(pid, hl) {
   setNav("honbun");
@@ -228,9 +249,9 @@ let EX = null;
 function examList() {
   setNav("exam"); title("学校テスト再現");
   main().innerHTML = `<div class="stack"><h2>模擬試験</h2>
-  <p class="small">過去問（一学期期末）と同じ組み立てです：各大問の問1 漢字（a〜j）、問2 語句の意味（ⅰ〜ⅳ）、問3以降 傍線部(A)(B)…の読解・抜き出し・記述、大問三 原稿用紙。</p>
+  <p class="small">${SUBJ === "taketori" ? "竹取物語の模擬試験です。過去問（一学期期末）には古文がなかったため、仮名遣い・現代語訳・主語の問題は補強として加えています。" : SUBJ === "mix" ? "総合模試：大問一 電車は走る、大問二 竹取物語、大問三 原稿用紙。" : ""}過去問（一学期期末）と同じ組み立てです：各大問の問1 漢字（a〜j）、問2 語句の意味（ⅰ〜ⅳ）、問3以降 傍線部(A)(B)…の読解・抜き出し・記述、大問三 原稿用紙。</p>
   <div class="note small">配点・制限時間は過去問に書かれていないため推定です（漢字1点、語句2点、選択・抜き出し3点、短答4点、記述5〜10点、50分）。過去問の語句問題は3択でしたが、ここでは4択で少し難しくしています。</div>
-  <div class="modes">${D.exams.map(e => `<button class="mode s" data-exam="${e.id}"><span class="lt">${e.id[1]}</span><span><b>${esc(e.title)}</b><span class="d">${e.time}分・100点${ST.best[e.id] != null ? "・最高 " + ST.best[e.id] + "点" : ""}</span></span></button>`).join("")}</div>
+  <div class="modes">${D.exams.filter(e => SUBJ === "mix" ? e.subj === "mix" : e.subj === SUBJ).concat(SUBJ === "mix" ? D.exams.filter(e => e.subj !== "mix") : []).map(e => `<button class="mode s" data-exam="${e.id}"><span class="lt">${e.id[1]}</span><span><b>${esc(e.title)}</b><span class="d">${e.time}分・100点${ST.best[e.id] != null ? "・最高 " + ST.best[e.id] + "点" : ""}</span></span></button>`).join("")}</div>
   <p class="small muted">紙で解きたいときは、一緒に渡した印刷用PDF（問題用紙・解答用紙・模範解答）を使ってください。</p></div>`;
 }
 const ROMAN = ["ⅰ", "ⅱ", "ⅲ", "ⅳ", "ⅴ"];
@@ -324,12 +345,14 @@ function gradeExam() {
 }
 // ---------- 一覧 ----------
 function lists(tab) {
-  setNav("list"); title("一覧");
+  setNav("list");
   tab = tab || "S";
   const tabs = [["S", "Sランク一覧"], ["V", "語句の意味一覧"], ["J", "漢字一覧"], ["ALL", "全問題"]];
+  title("一覧｜" + SUBJECTS[SUBJ]);
   let body = "";
   if (tab === "V") {
     const vs = QS.filter(q => q.cat === "語句" && q.type === "mc");
+    if (SUBJ === "mix") vs.sort((a, b) => (a.subj < b.subj) - (a.subj > b.subj));
     body = `<div class="tbl"><table><thead><tr><th>語句</th><th>本文中の意味</th><th>ページ</th><th>注意</th></tr></thead><tbody>${vs.map(q => `<tr><td><b>${esc(q.word)}</b> <span class="tag ${q.rank}">${q.rank}</span></td><td>${esc(q.model)}</td><td class="n">${esc(q.page)}</td><td class="small">${esc((q.expl.split("【注意】")[1]) || "")}</td></tr>`).join("")}</tbody></table></div>`;
   } else if (tab === "J") {
     const js = QS.filter(q => q.cat === "漢字");
@@ -354,7 +377,7 @@ function dataView() {
   <div class="sheet stack"><b>表示</b><div class="row"><button class="chip" data-act="tate" aria-pressed="${ST.prefs.tate}">本文を縦書きで表示</button></div></div>
   </div>`;
   $("#bk").value = JSON.stringify({ app: "densha", v: 1, at: new Date().toISOString(), data: ST });
-  $("#csv").value = C.toCSV(QS, ST.prog).replace(/^﻿/, "");
+  $("#csv").value = C.toCSV(ALL, ST.prog).replace(/^﻿/, "");
   const copy = (ta, btn) => { const done = () => { btn.textContent = "コピーしました"; }; try { navigator.clipboard.writeText(ta.value).then(done, () => { ta.select(); done(); }); } catch (e) { ta.select(); } };
   $("#cp").onclick = () => copy($("#bk"), $("#cp"));
   $("#cpcsv").onclick = () => copy($("#csv"), $("#cpcsv"));
@@ -373,10 +396,11 @@ function help() {
 // ---------- ルーティング ----------
 let LAST = home;
 document.addEventListener("click", e => {
-  const t = e.target.closest("[data-resume],[data-go],[data-mode],[data-char],[data-pass],[data-pass-list],[data-exam],[data-open],[data-backto],[data-list],[data-act]");
+  const t = e.target.closest("[data-subj],[data-resume],[data-go],[data-mode],[data-char],[data-pass],[data-pass-list],[data-exam],[data-open],[data-backto],[data-list],[data-act]");
   if (!t) return;
   const d = t.dataset;
   if (d.act === "tate") { ST.prefs.tate = !ST.prefs.tate; save(); main().querySelectorAll(".honbun").forEach(h => h.classList.toggle("tate", ST.prefs.tate)); document.querySelectorAll('[data-act="tate"]').forEach(b => b.setAttribute("aria-pressed", ST.prefs.tate)); return; }
+  if (d.subj) { setSubj(d.subj); SES = null; home(); return; }
   if (d.go === "back") { return LAST(); }
   if (d.resume) { if (SES) { showQ(); window.scrollTo(0, 0); } return; }
   if (d.go) { const f = { home, honbun: passageList, exam: examList, list: () => lists(), data: dataView, help }[d.go]; if (f) { SES = null; LAST = f; f(); window.scrollTo(0, 0); } return; }
@@ -398,7 +422,7 @@ document.addEventListener("click", e => {
 if ("serviceWorker" in navigator && location.protocol.startsWith("http") && !/claude|anthropic/.test(location.hostname)) {
   try { navigator.serviceWorker.register("sw.js").catch(() => {}); } catch (e) {}
 }
-window.__app = { startMode, startExam, showQ, gradeExam, passageView, lists, dataView, help, home, get ST() { return ST; }, get SES() { return SES; }, get EX() { return EX; } };
+window.__app = { setSubj, get SUBJ() { return SUBJ; }, get QS() { return QS; }, startMode, startExam, showQ, gradeExam, passageView, lists, dataView, help, home, get ST() { return ST; }, get SES() { return SES; }, get EX() { return EX; } };
 try { document.getElementById("cnt").innerHTML = "テストまで<b>" + C.daysLeft(now(), D.examDate) + "</b>日"; } catch (e) {}
 home();
 })();
