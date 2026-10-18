@@ -103,14 +103,38 @@ function tateToggle() {
   return `<button class="chip noprint" data-act="tate" aria-pressed="${ST.prefs.tate}">縦書き</button>`;
 }
 // ---------- ホーム ----------
+// ---------- パート分け（文章問題を教科書のページ順に3つに分ける） ----------
+function pageNo(q) { const m = String(q.page || "").match(/\d+/); return m ? Number(m[0]) : 9999; }
+function parts() {
+  const pool = QS.filter(isBun).map((q, i) => [q, i])
+    .sort((a, b) => (SUBJ === "mix" ? (a[0].subj > b[0].subj) - (a[0].subj < b[0].subj) : 0) || pageNo(a[0]) - pageNo(b[0]) || a[1] - b[1]).map(x => x[0]);
+  const n = pool.length, out = [];
+  for (let i = 0; i < 3; i++) out.push(pool.slice(Math.round(n * i / 3), Math.round(n * (i + 1) / 3)));
+  return out;
+}
+function curPart() { const p = (ST.part || {})[SUBJ]; return p >= 0 && p < 3 ? p : 0; }
+function setPart(i) { ST.part = ST.part || {}; ST.part[SUBJ] = i; save(); }
+function partRange(pool) {
+  const by = {};
+  pool.forEach(q => { const n = pageNo(q); if (n < 9999) { const r = by[q.subj] = by[q.subj] || [n, n]; r[0] = Math.min(r[0], n); r[1] = Math.max(r[1], n); } });
+  return Object.entries(by).map(([k, [a, b]]) => (SUBJ === "mix" ? (k === "taketori" ? "竹取 " : "電車 ") : "") + "p." + a + (b > a ? "〜" + b : "")).join("・");
+}
+const solvedCount = pool => pool.filter(q => ST.prog[q.id] && ST.prog[q.id].c > 0).length;
+const masteredCount = pool => pool.filter(q => ST.prog[q.id] && ST.prog[q.id].mastered).length;
+// ---------- ホーム ----------
 function home() {
   setNav("home"); title(SUBJECTS[SUBJ] + (SUBJ === "mix" ? "（2教材）" : ""));
-  const pool = QS.filter(isBun);
-  const s = C.stats(pool, ST.prog, now());
+  const all = QS.filter(isBun), ps = parts(), cur = curPart();
   const dl = C.daysLeft(now(), D.examDate);
   const best = Math.max(0, ...D.exams.filter(e => SUBJ === "mix" ? true : e.subj === SUBJ).map(e => ST.best[e.id] || 0));
+  const pb = ST.pbest || {};
+  const cards = ps.map((pool, i) => {
+    const sv = solvedCount(pool), ms = masteredCount(pool), b = pb[SUBJ + "-" + i];
+    return `<button class="part" data-part="${i}" aria-pressed="${i === cur}"><b>パート${i + 1}${ms === pool.length ? " 👑" : ""}</b><span class="pr">${esc(partRange(pool))}</span><span class="bar"><span style="width:${pct(sv / pool.length)}"></span></span><span class="pn">正解 <b>${sv}</b>/${pool.length}</span><span class="pm">習得 ${ms}${b != null ? "・ベスト " + pct(b) : ""}</span></button>`;
+  }).join("");
   const modes = Object.entries(MODES).map(([k, m], i) => `<button class="mode big${i ? "" : " s"}" data-mode="${k}"><span class="lt">${i + 1}</span><span><b>${m.t}</b><span class="d">${m.d}</span></span></button>`).join("");
   const tabs = Object.entries(SUBJECTS).map(([k, t]) => `<button class="subj" data-subj="${k}" aria-pressed="${k === SUBJ}">${k === "taketori" ? "① " : k === "densha" ? "② " : ""}${t}${k === "mix" ? "（2教材）" : ""}</button>`).join("");
+  const sAll = solvedCount(all);
   main().innerHTML = `
   <div class="stack">
     <div class="subjs" role="group" aria-label="教材">${tabs}</div>
@@ -121,24 +145,37 @@ function home() {
         <div class="st goal"><i></i><b>中間テスト</b>10月20日〜</div>
       </div>
     </div>
-    <h2>文章問題 <span class="small muted">（${SUBJECTS[SUBJ]}・${pool.length}問）</span></h2>
+    <h2>文章問題 <span class="small muted">（${SUBJECTS[SUBJ]}・${all.length}問を3つに分けています）</span></h2>
+    <div class="parts" role="group" aria-label="パート">${cards}</div>
+    <h3>パート${cur + 1}（${ps[cur].length}問）を練習する</h3>
     <div class="modes two">${modes}</div>
     <div class="tiles">
-      <div class="tile"><div class="k">習得率</div><div class="v">${pct(s.allRate)}</div><div class="bar"><span style="width:${pct(s.allRate)}"></span></div></div>
-      <div class="tile"><div class="k">間違えた問題</div><div class="v">${s.wrongCount}<span class="small muted">問</span></div><div class="k">先に出題されます</div></div>
+      <div class="tile"><div class="k">全体で正解した問題</div><div class="v">${sAll}<span class="small muted">／${all.length}問</span></div><div class="bar"><span style="width:${pct(sAll / all.length)}"></span></div></div>
       <div class="tile"><div class="k">模擬試験の最高点</div><div class="v">${best ? best : "—"}<span class="small muted">${best ? "点" : ""}</span></div><div class="k">100点満点</div></div>
     </div>
-    <p class="small muted">文章問題＝${BUNSHO.join("・")}（語句・漢字などは出しません）。間違えた問題と復習の時期が来た問題から先に出ます。記録はこの端末のブラウザに保存されます。</p>
+    <p class="small muted">パートは教科書のページ順です。正解＝一度でも正解した問題、習得＝続けて正解した問題（👑＝パートの全問を習得）。文章問題＝${BUNSHO.join("・")}。記録はこの端末のブラウザに保存されます。</p>
   </div>`;
 }
 // ---------- 出題セッション ----------
 let SES = null;
 function startMode(k) {
   if (k === "L") return autoSetup();
-  const pool = QS.filter(isBun);
-  const queue = C.buildQueue(pool, ST.prog, now(), { recent: ST.recent, seed: now() });
-  SES = { mode: "P", label: MODES.P.t + "｜" + SUBJECTS[SUBJ], queue, pos: 0, right: 0, done: 0, until: false, total0: queue.length };
+  newSession("P");
   showQ();
+}
+function newSession(mode) {
+  const pi = curPart(), pool = parts()[pi];
+  const queue = C.buildQueue(pool, ST.prog, now(), { recent: ST.recent, seed: now() });
+  SES = { mode, auto: mode === "L", part: pi, pool: pool.map(q => q.id), base: solvedCount(pool), label: MODES[mode].t + "｜パート" + (pi + 1),
+    queue, pos: 0, right: 0, wrong: 0, streak: 0, maxStreak: 0, seen: 0, done: 0, until: false, total0: queue.length };
+}
+// ---------- 正解・不正解の数と連続正解 ----------
+function sbHTML() { return `<b class="ok">○ ${SES.right}</b><b class="ng">× ${SES.wrong}</b>${SES.streak >= 2 ? `<b class="fire">🔥${SES.streak}連続</b>` : ""}`; }
+function tally(ok) {
+  SES.done++; SES.marked = true;
+  if (ok) { SES.right++; SES.streak++; SES.maxStreak = Math.max(SES.maxStreak, SES.streak); } else { SES.wrong++; SES.streak = 0; }
+  const el = $("#sb"); if (el) el.innerHTML = sbHTML();
+  if (ok && SES.streak >= 3) { const m = $("#res .mark"), r = $("#res .result"); const h = `<span class="combo">🔥 ${SES.streak}問連続正解！</span>`; if (m) m.insertAdjacentHTML("beforeend", h); else if (r) r.insertAdjacentHTML("afterbegin", h); }
 }
 // ---------- 答え自動表示モード ----------
 const AUTO = { t: null, iv: null, paused: false, tok: 0 };
@@ -152,10 +189,9 @@ function autoSetup() {
     <div><b>答えが出るまで</b><div class="row">${prefChips("autoSec", [[3, "3秒"], [5, "5秒"], [8, "8秒"], [10, "10秒"], [15, "15秒"]])}</div></div>
     <div><b>読み上げの速さ</b><div class="row">${prefChips("rate", RATES)}</div></div>
     <div><b>答えのあと</b><div class="row">${prefChips("autoNext", [[true, "自動で次へ"], [false, "ボタンで次へ"]])}</div></div>
-    <div class="row"><button class="btn pri" id="autogo">はじめる（${QS.filter(isBun).length}問）</button><button class="btn" data-go="home">ホームへ</button></div></div>`;
+    <div class="row"><button class="btn pri" id="autogo">パート${curPart() + 1}をはじめる（${parts()[curPart()].length}問）</button><button class="btn" data-go="home">ホームへ</button></div></div>`;
   $("#autogo").onclick = () => {
-    const queue = C.buildQueue(QS.filter(isBun), ST.prog, now(), { recent: ST.recent, seed: now() });
-    SES = { mode: "L", auto: true, label: MODES.L.t + "｜" + SUBJECTS[SUBJ], queue, pos: 0, right: 0, done: 0, until: false, total0: queue.length };
+    newSession("L");
     AUTO.paused = false; LAST = home;
     showQ(); window.scrollTo(0, 0);
   };
@@ -194,8 +230,8 @@ function reveal(q) {
     <div class="row"><button class="btn pri" id="next">次の問題 →</button></div></div>`;
   res.querySelectorAll("[data-self]").forEach(b => b.onclick = () => {
     if (res.dataset.graded) return; res.dataset.graded = "1"; b.setAttribute("aria-pressed", "true");
-    const ok = b.dataset.self === "1"; record(q, ok); SES.done++;
-    if (ok) SES.right++; else SES.queue = C.requeue(SES.queue, SES.pos, q.id, 4);
+    const ok = b.dataset.self === "1"; record(q, ok); tally(ok);
+    if (!ok) SES.queue = C.requeue(SES.queue, SES.pos, q.id, 4);
   });
   $("#saya").onclick = () => speak(aSpeech(q));
   $("#next").onclick = next;
@@ -203,7 +239,7 @@ function reveal(q) {
 }
 function showQ(single) {
   stopAuto(); stopSpeak();
-  if (SES) SES.revealed = false;
+  if (SES) SES.revealed = SES.marked = false;
   const id = single || SES.queue[SES.pos];
   const q = QM[id];
   const auto = !single && SES && SES.auto;
@@ -222,7 +258,7 @@ function showQ(single) {
   }
   main().innerHTML = `<div class="stack">
     ${single ? "" : `<div class="progress"><span style="width:${(n - 1) / total * 100}%"></span></div>`}
-    <div class="qhead">${single ? "" : SES.until ? `<b>のこり ${total - n + 1}問</b>` : `<b>${n} / ${total}</b>`}<span class="tag ${q.rank}">${q.rank}ランク</span><span class="tag">${esc(q.cat)}</span>${/^補強/.test(q.reason) ? `<span class="tag B">補強</span>` : ""}${SUBJ === "mix" ? `<span class="tag">${subjOf(q)}</span>` : ""}<span>難易度${"★".repeat(q.diff)}</span><span>${esc(pageLabel(q))}</span><span>${esc(q.id)}</span>${q.p ? tateToggle() : ""}${speakChip()}</div>
+    <div class="qhead">${single ? "" : SES.until ? `<b>のこり ${total - n + 1}問</b>` : `<b>${n} / ${total}</b>`}${single ? "" : `<span class="sb" id="sb">${sbHTML()}</span>`}<span class="tag ${q.rank}">${q.rank}ランク</span><span class="tag">${esc(q.cat)}</span>${/^補強/.test(q.reason) ? `<span class="tag B">補強</span>` : ""}${SUBJ === "mix" ? `<span class="tag">${subjOf(q)}</span>` : ""}<span>難易度${"★".repeat(q.diff)}</span><span>${esc(pageLabel(q))}</span><span>${esc(q.id)}</span>${q.p ? tateToggle() : ""}${speakChip()}</div>
     ${auto ? `<div class="autobar noprint"><div class="progress"><span id="cd" style="width:0"></span></div><span id="cdt" class="small muted"></span><button class="chip" id="pause" aria-pressed="${AUTO.paused}">${AUTO.paused ? "再開" : "一時停止"}</button><button class="chip" id="reveal">答えを見る</button></div>` : ""}
     ${body}
     <div class="sheet">
@@ -232,7 +268,7 @@ function showQ(single) {
       <div class="row" style="margin-top:12px"><button class="btn pri" id="submit" ${q.type === "mc" ? "disabled" : ""}>解答する</button>${single ? "" : `<button class="btn" id="skip">とばす</button>`}</div>
       <div id="res"></div>
     </div>
-    ${single ? "" : `<div class="row"><button class="btn" data-go="home">やめる（記録は保存済み）</button></div>`}
+    ${single ? "" : `<div class="row"><button class="btn" id="quit">やめて結果を見る</button></div>`}
   </div>`;
   let sel = null;
   main().querySelectorAll(".choice").forEach(b => b.onclick = () => {
@@ -245,6 +281,7 @@ function showQ(single) {
   $("#submit").onclick = () => answer(q, q.type === "mc" ? sel : ta.value, single);
   if ($("#skip")) $("#skip").onclick = () => next();
   $("#sayq").onclick = () => speak(qSpeech(q));
+  if ($("#quit")) $("#quit").onclick = () => { stopAuto(); stopSpeak(); if (SES.auto && SES.revealed && !SES.marked) SES.seen++; if (SES.done || SES.seen) endSession(); else { SES = null; home(); } window.scrollTo(0, 0); };
   centerBou();
   if (auto) {
     $("#reveal").onclick = () => { stopSpeak(); reveal(q); };
@@ -295,7 +332,7 @@ function answer(q, val, single) {
   </div>`;
   const finish = ok => {
     record(q, ok);
-    if (!single) { SES.done++; if (ok) SES.right++; else SES.queue = SES.until ? SES.queue.concat([q.id]) : C.requeue(SES.queue, SES.pos, q.id, 4); const nb = $("#next"); if (nb) nb.disabled = false; }
+    if (!single) { tally(ok); if (!ok) SES.queue = C.requeue(SES.queue, SES.pos, q.id, 4); const nb = $("#next"); if (nb) nb.disabled = false; }
   };
   if (g.auto) finish(!!g.ok);
   else res.querySelectorAll("[data-self]").forEach(b => b.onclick = () => {
@@ -310,15 +347,39 @@ function answer(q, val, single) {
   res.scrollIntoView({ behavior: "smooth", block: "nearest" });
 }
 function next() {
+  if (SES.auto && SES.revealed && !SES.marked) SES.seen++;
   SES.pos++;
   if (SES.pos >= SES.queue.length) return endSession();
   showQ();
   window.scrollTo(0, 0);
 }
 function endSession() {
-  const r = SES;
-  main().innerHTML = `<div class="sheet stack"><h2>${r.until ? "全問正解しました！" : "おつかれさま！"}</h2><p class="score">${r.right}<span class="small muted">／${r.done}回 正解</span></p>${r.until ? `<p>${r.total0}問すべてに正解するまでくり返しました。</p>` : ""}<p>間違えた問題は、次回も先に出題されます。</p><div class="row"><button class="btn pri" data-mode="${r.mode}">もう一度</button><button class="btn" data-go="home">ホームへ</button></div></div>`;
-  SES = null;
+  const r = SES; SES = null;
+  setNav("home"); title("パート" + (r.part + 1) + "｜結果");
+  const pool = r.pool.map(id => QM[id]), sv = solvedCount(pool), ms = masteredCount(pool), gain = sv - r.base;
+  const acc = r.done ? r.right / r.done : 0;
+  const stars = !r.done ? 0 : acc >= 0.9 ? 3 : acc >= 0.7 ? 2 : 1;
+  const key = SUBJ + "-" + r.part; ST.pbest = ST.pbest || {}; const prev = ST.pbest[key];
+  let newBest = false;
+  if (r.done >= 5 && (prev == null || acc > prev)) { newBest = prev != null; ST.pbest[key] = acc; save(); }
+  const msg = stars === 3 ? "すばらしい！ほぼ完璧です。" : stars === 2 ? "いい調子！あと少しで完璧です。" : stars === 1 ? "間違えた問題は、次に先に出ます。くり返せば必ず覚えられる！" : "答えを見て覚えた問題も、○×を押すと記録に残ります。";
+  main().innerHTML = `<div class="sheet stack endres">
+    <h2>パート${r.part + 1} おつかれさま！</h2>
+    ${r.done ? `<div class="stars" aria-label="星${stars}つ">${"★".repeat(stars)}<span>${"★".repeat(3 - stars)}</span></div>` : ""}
+    <div class="endnums">
+      <div><span class="k">正解</span><b class="ok">○ ${r.right}</b></div>
+      <div><span class="k">不正解</span><b class="ng">× ${r.wrong}</b></div>
+      <div><span class="k">正答率</span><b>${r.done ? pct(acc) : "—"}</b></div>
+      <div><span class="k">最大連続</span><b>🔥${r.maxStreak}</b></div>
+    </div>
+    ${r.seen ? `<p class="small">答えを見ただけ（○×なし）：${r.seen}問</p>` : ""}
+    ${newBest ? `<p class="newbest">🎉 自己ベスト更新！（前回 ${pct(prev)} → 今回 ${pct(acc)}）</p>` : ""}
+    <div><b>パート${r.part + 1}の進み具合</b>
+      <div class="bar big"><span style="width:${pct(sv / pool.length)}"></span></div>
+      <p class="small">正解したことのある問題 <b>${sv}</b>／${pool.length}問${gain > 0 ? `（今回 <b class="ok">+${gain}問</b>）` : ""}・習得 ${ms}問${ms === pool.length ? " 👑 全問習得！" : ""}</p></div>
+    <p>${msg}</p>
+    <div class="row"><button class="btn pri" data-mode="${r.mode}">もう一度</button>${r.part < 2 ? `<button class="btn" data-part="${r.part + 1}" data-then="${r.mode}">パート${r.part + 2}へ →</button>` : ""}<button class="btn" data-go="home">ホームへ</button></div>
+  </div>`;
 }
 // ---------- 傍線部読解 ----------
 let BACK = null;
@@ -496,7 +557,7 @@ function help() {
 // ---------- ルーティング ----------
 let LAST = home;
 document.addEventListener("click", e => {
-  const t = e.target.closest("[data-subj],[data-resume],[data-go],[data-mode],[data-pass],[data-pass-list],[data-exam],[data-open],[data-backto],[data-list],[data-act],[data-pref]");
+  const t = e.target.closest("[data-subj],[data-resume],[data-go],[data-mode],[data-part],[data-pass],[data-pass-list],[data-exam],[data-open],[data-backto],[data-list],[data-act],[data-pref]");
   if (!t) return;
   const d = t.dataset;
   if (d.act === "tate") { ST.prefs.tate = !ST.prefs.tate; save(); main().querySelectorAll(".honbun").forEach(h => h.classList.toggle("tate", ST.prefs.tate)); document.querySelectorAll('[data-act="tate"]').forEach(b => b.setAttribute("aria-pressed", ST.prefs.tate)); centerBou(); return; }
@@ -512,6 +573,7 @@ document.addEventListener("click", e => {
   if (d.go === "back") { return LAST(); }
   if (d.resume) { if (SES) { showQ(); window.scrollTo(0, 0); } return; }
   if (d.go) { const f = { home, honbun: passageList, exam: examList, list: () => lists(), data: dataView, help }[d.go]; if (f) { SES = null; LAST = f; f(); window.scrollTo(0, 0); } return; }
+  if (d.part) { setPart(Number(d.part)); if (d.then) { LAST = home; startMode(d.then); } else home(); window.scrollTo(0, 0); return; }
   if (d.mode) { LAST = home; startMode(d.mode); window.scrollTo(0, 0); return; }
   if (d.pass) { LAST = () => passageView(d.pass); passageView(d.pass); window.scrollTo(0, 0); return; }
   if (d.passList) { passageList(); return; }
@@ -529,7 +591,7 @@ document.addEventListener("click", e => {
 if ("serviceWorker" in navigator && location.protocol.startsWith("http") && !/claude|anthropic/.test(location.hostname)) {
   try { navigator.serviceWorker.register("sw.js").catch(() => {}); } catch (e) {}
 }
-window.__app = { setSubj, get SUBJ() { return SUBJ; }, get QS() { return QS; }, startMode, startExam, showQ, gradeExam, passageView, lists, dataView, help, home, get ST() { return ST; }, get SES() { return SES; }, get EX() { return EX; } };
+window.__app = { parts, setPart, curPart, setSubj, get SUBJ() { return SUBJ; }, get QS() { return QS; }, startMode, startExam, showQ, gradeExam, passageView, lists, dataView, help, home, get ST() { return ST; }, get SES() { return SES; }, get EX() { return EX; } };
 try { document.getElementById("cnt").innerHTML = "テストまで<b>" + C.daysLeft(now(), D.examDate) + "</b>日"; } catch (e) {}
 home();
 })();

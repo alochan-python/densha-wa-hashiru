@@ -18,16 +18,42 @@ try:
         pg.on("pageerror", lambda e: errs.append(str(e)))
         pg.on("console", lambda m: errs.append(m.text) if m.type == "error" and "fonts" not in m.text else None)
         pg.goto(URL); pg.wait_for_selector(".tile")
-        t("起動・ホーム表示（モードは2つだけ）", pg.locator(".tile").count() == 3 and pg.locator("[data-mode]").count() == 2)
+        t("起動・ホーム表示（モード2つ・パート3つ）", pg.locator(".part").count() == 3 and pg.locator("[data-mode]").count() == 2)
         BUN = "['心情','理由','表現','抜き出し','視点','記述','総合','現代語訳','主語・敬語'].includes(q.cat)"
         ntk = pg.evaluate(f"APPDATA.questions.filter(q=>q.subj==='taketori'&&{BUN}).length"); nd = pg.evaluate(f"APPDATA.questions.filter(q=>q.subj==='densha'&&{BUN}).length")
         t(f"初期教材は竹取物語（文章問題{ntk}問）", pg.evaluate("__app.SUBJ") == "taketori" and str(ntk) in pg.inner_text("main"))
         pg.screenshot(path=f"{SHOT}/00_home_tk.png", full_page=True)
         # 1 自分で解く：文章問題だけ
+        ps = pg.evaluate("__app.parts().map(p=>p.map(q=>q.id))")
+        allp = [i for p_ in ps for i in p_]
+        t("パートは3つで、重なりなく全問をカバー", len(ps) == 3 and len(allp) == ntk == len(set(allp)) and max(map(len, ps)) - min(map(len, ps)) <= 1)
         pg.click('[data-mode="P"]'); pg.wait_for_selector(".qtext")
         qq = pg.evaluate("__app.SES.queue.slice()")
-        t("自分で解く：文章問題だけ出題", len(qq) == ntk and pg.evaluate(f"__app.SES.queue.every(id=>{{const q=APPDATA.questions.find(x=>x.id===id);return {BUN};}})"))
-        pg.click('[data-go="home"]')
+        t("自分で解く：パート1の文章問題だけ出題", sorted(qq) == sorted(ps[0]) and pg.evaluate(f"__app.SES.queue.every(id=>{{const q=APPDATA.questions.find(x=>x.id===id);return {BUN};}})"))
+        # 正解・不正解の数と連続正解
+        for k in range(3):
+            cur = pg.evaluate("__app.SES.queue[__app.SES.pos]"); qd = pg.evaluate(f"APPDATA.questions.find(x=>x.id==='{cur}')")
+            if qd["type"] == "mc": pg.locator(".choice").nth(int(qd["answer"])).click(); pg.click("#submit")
+            elif qd["type"] == "extract": pg.fill("input[type=text]", qd["model"]); pg.click("#submit")
+            else: pg.fill("textarea", qd["model"]); pg.click("#submit"); pg.click('[data-self="1"]')
+            if k < 2: pg.click("#next"); pg.wait_for_selector(".qtext")
+        t("正解数と連続正解を表示", "○ 3" in pg.inner_text("#sb") and "3連続" in pg.inner_text("#sb") and "3問連続正解" in pg.inner_text("#res"))
+        pg.click("#next"); pg.wait_for_selector(".qtext")
+        cur = pg.evaluate("__app.SES.queue[__app.SES.pos]"); qd = pg.evaluate(f"APPDATA.questions.find(x=>x.id==='{cur}')")
+        if qd["type"] == "mc": pg.locator(".choice").nth((int(qd["answer"]) + 1) % 4).click(); pg.click("#submit")
+        elif qd["type"] == "extract": pg.fill("input[type=text]", "まちがい"); pg.click("#submit")
+        else: pg.fill("textarea", "まちがい"); pg.click("#submit"); pg.click('[data-self="0"]')
+        t("不正解数を表示（連続はリセット）", "× 1" in pg.inner_text("#sb") and "連続" not in pg.inner_text("#sb"))
+        pg.click("#quit"); pg.wait_for_selector(".endres")
+        t("やめると結果画面（正解・不正解・正答率・星）", "○ 3" in pg.inner_text(".endres") and "× 1" in pg.inner_text(".endres") and "75%" in pg.inner_text(".endres") and pg.locator(".stars").count() == 1)
+        t("結果画面にパートの進み具合（今回 +3問）", "+3問" in pg.inner_text(".endres"))
+        pg.screenshot(path=f"{SHOT}/10_result.png", full_page=True)
+        pg.click('[data-part="1"]'); pg.wait_for_selector(".qtext")
+        t("次のパートへ進む", pg.evaluate("__app.curPart()") == 1 and sorted(pg.evaluate("__app.SES.queue.slice()")) == sorted(ps[1]))
+        pg.click("#quit"); pg.wait_for_selector(".part")
+        t("パート選択を保存", pg.locator('.part[aria-pressed="true"]').get_attribute("data-part") == "1")
+        pg.screenshot(path=f"{SHOT}/00_home_parts.png", full_page=True)
+        pg.click('[data-part="0"]')
         # 古文の傍線表示
         pg.evaluate("__app.showQ('TG06')")
         t("古文の傍線部表示", pg.locator(".honbun.kobun").count() == 1 and "うつくしうてゐたり" in pg.inner_text(".bou.on"))
@@ -48,7 +74,7 @@ try:
         # 教材切り替えと混在防止
         pg.click('[data-go="home"]'); pg.click('[data-subj="densha"]')
         t("電車は走るに切り替え", pg.evaluate("__app.SUBJ") == "densha" and pg.evaluate("__app.QS.every(q=>q.subj==='densha')") and str(nd) in pg.inner_text("main"))
-        t("教材ごとに最高点が別", "—" in pg.locator(".tile").nth(2).inner_text())
+        t("教材ごとに最高点が別", "—" in pg.locator(".tile").nth(1).inner_text())
         pg.click('[data-go="honbun"]')
         t("傍線部一覧に竹取が混ざらない", pg.locator('[data-pass^="TK"]').count() == 0)
         pg.click('[data-go="exam"]')
@@ -124,10 +150,11 @@ try:
         # 間違えた問題モード
         pg.evaluate("__app.showQ('E10')"); pg.fill("input[type=text]", "まちがい"); pg.click("#submit")
         pg.click('[data-go="back"]') if pg.locator('[data-go="back"]').count() else None
-        pg.evaluate("__app.ST.recent.length=0; __app.startMode('P')"); pg.wait_for_selector(".qtext")
+        pe = pg.evaluate("__app.parts().findIndex(p=>p.some(q=>q.id==='E10'))")
+        pg.evaluate(f"__app.ST.recent.length=0; __app.setPart({pe}); __app.startMode('P')"); pg.wait_for_selector(".qtext")
         q = pg.evaluate("__app.SES.queue")
         t("間違えた問題が先に出る（直前に出た問題は除く）", "E10" in q[:5])
-        t("ランダム出題・連続重複なし", len(q) == nd and all(q[i] != q[i + 1] for i in range(len(q) - 1)))
+        t("ランダム出題・連続重複なし", len(q) == len(pg.evaluate(f"__app.parts()[{pe}]")) and all(q[i] != q[i + 1] for i in range(len(q) - 1)))
         # 再起動後の復元
         before = pg.evaluate("Object.keys(__app.ST.prog).length")
         pg.reload(); pg.wait_for_selector(".tile")
@@ -225,7 +252,7 @@ try:
         pg.reload(); pg.wait_for_selector(".tile"); time.sleep(1)
         ctx.set_offline(True)
         pg.reload(); pg.wait_for_selector(".tile", timeout=8000)
-        t("オフラインで起動（Service Worker）", pg.locator(".tile").count() == 3)
+        t("オフラインで起動（Service Worker）", pg.locator(".part").count() == 3)
         ctx.set_offline(False)
         t("JavaScriptエラーなし " + "; ".join(errs[:3]), not [e for e in errs if "Failed to load resource" not in e])
         # PC幅・ダークモード

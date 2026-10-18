@@ -157,3 +157,30 @@ details summary{cursor:pointer;font-weight:700}
 .mode.big b{font-size:1.15rem}
 .mode.big .lt{width:42px;height:42px;font-size:1.2rem}
 .tiles{grid-template-columns:repeat(3,1fr)} .tiles .tile .v{font-size:1.3rem}
+/* パート */
+.parts{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.part{display:flex;flex-direction:column;gap:3px;text-align:left;background:var(--sheet);border:1.5px solid var(--rule);border-radius:10px;padding:10px;min-width:0}
+.part[aria-pressed="true"]{border-color:var(--line);box-shadow:0 0 0 2px var(--line) inset;background:var(--line-soft)}
+.part b{font-family:var(--f-mincho);font-size:1rem}
+.part .pr,.part .pm{font-size:.72rem;color:var(--muted);line-height:1.35}
+.part .pn{font-size:.82rem}
+.bar{display:block;height:6px;background:var(--line-soft);border-radius:3px;overflow:hidden}
+.part[aria-pressed="true"] .bar{background:var(--sheet)}
+.bar>span{display:block;height:100%;background:var(--green)}
+.bar.big{height:12px;border-radius:6px;margin:6px 0 2px}
+/* 正解・不正解の数 */
+.sb{display:inline-flex;gap:8px;font-size:.92rem}
+.ok{color:var(--green)} .ng{color:var(--red)} .fire{color:var(--amber)}
+.combo{font-weight:700;color:var(--amber);background:var(--amber-soft);border-radius:999px;padding:2px 12px}
+@media (prefers-reduced-motion:no-preference){.combo{animation:pop .35s ease-out}@keyframes pop{0%{transform:scale(.6);opacity:0}70%{transform:scale(1.1)}100%{transform:scale(1);opacity:1}}}
+/* 結果画面 */
+.endres h2{margin-top:4px}
+.stars{font-size:2.6rem;line-height:1;color:var(--amber);letter-spacing:.1em}
+.stars span{color:var(--rule)}
+.endnums{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;text-align:center}
+.endnums div{background:var(--paper);border-radius:8px;padding:8px 2px}
+.endnums .k{display:block;font-size:.72rem;color:var(--muted)}
+.endnums b{font-size:1.4rem;font-variant-numeric:tabular-nums}
+.newbest{font-weight:700;color:var(--red);background:var(--red-soft);border-radius:8px;padding:8px 12px;margin:0}
+.tiles{grid-template-columns:repeat(2,1fr)}
+.part .bar{background:var(--rule);height:8px;margin:4px 0}
