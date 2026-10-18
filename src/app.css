@@ -143,3 +143,11 @@ details summary{cursor:pointer;font-weight:700}
 .subj[aria-pressed="true"]{background:var(--line);border-color:var(--line);color:var(--sheet)}
 .honbun.kobun{background:var(--amber-soft)}
 .honbun .kb{display:inline-block;font-family:var(--f-goth);font-size:.72rem;font-weight:700;color:var(--amber);border:1px solid var(--amber);border-radius:4px;padding:0 6px;margin-right:6px;line-height:1.6}
+/* 縦書き（標準）：問題画面では本文を少し低くして設問が見えるように */
+.honbun.tate.inq{max-height:min(48vh,22em)}
+/* 答え自動表示 */
+.autobar{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.autobar .progress{flex:1 1 140px;height:8px}
+.autobar .progress span{background:var(--amber)}
+.box p.big{font-size:1.1rem;font-weight:700}
+.qtext .chip{font-size:.78rem;padding:2px 10px;vertical-align:middle}

@@ -152,6 +152,14 @@ details summary{cursor:pointer;font-weight:700}
 .subj[aria-pressed="true"]{background:var(--line);border-color:var(--line);color:var(--sheet)}
 .honbun.kobun{background:var(--amber-soft)}
 .honbun .kb{display:inline-block;font-family:var(--f-goth);font-size:.72rem;font-weight:700;color:var(--amber);border:1px solid var(--amber);border-radius:4px;padding:0 6px;margin-right:6px;line-height:1.6}
+/* 縦書き（標準）：問題画面では本文を少し低くして設問が見えるように */
+.honbun.tate.inq{max-height:min(48vh,22em)}
+/* 答え自動表示 */
+.autobar{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.autobar .progress{flex:1 1 140px;height:8px}
+.autobar .progress span{background:var(--amber)}
+.box p.big{font-size:1.1rem;font-weight:700}
+.qtext .chip{font-size:.78rem;padding:2px 10px;vertical-align:middle}
 </style>
 <header class="top"><div class="in"><h1 id="ttl">電車は走る テスト対策</h1><span class="count" id="cnt"></span><button class="chip" data-go="help">使い方</button></div></header>
 <main class="wrap" id="main"></main>
@@ -173,7 +181,9 @@ details summary{cursor:pointer;font-weight:700}
     <li><b>傍線部</b>タブ：本文の傍線（①②…）をタップするとその傍線の問題に飛びます。問題の答え合わせのあと「本文で前後を確認する」で本文に戻れます。</li>
     <li><b>模擬試験</b>：学校のテストと同じ「漢字→語句→傍線部(A)(B)…→記述→原稿用紙」の順。最後に「採点する」。記述は点数ボタンで自己採点。</li>
     <li><b>記録</b>タブ：記録のバックアップ（コピーして保存）・復元・CSV。記録はこの端末のブラウザだけに保存されます。</li>
-    <li>本文の「縦書き」ボタンで、教科書と同じ縦書き表示に切りかえられます。</li>
+    <li>本文は<b>縦書きが標準</b>です（教科書と同じ）。「縦書き」ボタンを押すと横書きにもできます。縦書きの本文は横にスクロールして読みます。</li>
+    <li><b>音声</b>：問題が出ると設問（選択肢も）を、答えると正解を読み上げます。「🔊 設問」「🔊 答え」でもう一度聞けます。「音声」ボタンで切りかえ、「記録」タブで速さを変えられます。漢字の読み問題は、答えがわからないよう漢字を読み上げません。</li>
+    <li><b>L：答え自動表示</b>：範囲と秒数（5〜30秒）を選ぶと、時間がたつと答えが出て、読み上げのあと自動で次の問題へ進みます。聞き流しや暗記の確認に。途中で「一時停止」できます。</li>
   </ol>
   <h2>過去問（一学期期末）から分かった出題の形</h2>
   <div class="tbl"><table>
@@ -385,13 +395,19 @@ const MODES = {
   K: { t: "間違えた語句だけ", d: "×がついた語句だけを復習", f: null },
   G: { t: "全問題ランダム", d: "全分野からまんべんなく", f: q => true },
   H: { t: "試験直前30分", d: "Sランクと未習得を優先して30問", f: null },
+  L: { t: "答え自動表示", d: "時間がたつと答えが出て、次へ進む（音声つき）", f: null },
 };
 // ---------- 保存 ----------
 const KEY = "densha-test-v1";
-let ST = { prog: {}, recent: [], best: {}, exams: {}, prefs: { tate: false } };
+const DEFPREFS = { tate: true, speak: true, rate: 1, autoSec: 10, autoNext: true, autoRange: "S" };
+let ST = { prog: {}, recent: [], best: {}, exams: {}, prefs: Object.assign({}, DEFPREFS) };
 function load() { try { const s = localStorage.getItem(KEY); if (s) ST = Object.assign(ST, JSON.parse(s)); } catch (e) {} }
 function save() { try { localStorage.setItem(KEY, JSON.stringify(ST)); } catch (e) {} }
-load();
+function fixPrefs() {
+  ST.prefs = Object.assign({}, DEFPREFS, ST.prefs || {});
+  if (!ST.prefs.v2) { ST.prefs.tate = true; ST.prefs.v2 = 1; } // 縦書きを標準に（以前の設定も一度だけ縦書きにする）
+}
+load(); fixPrefs();
 function setSubj(sj) { SUBJ = SUBJECTS[sj] ? sj : "taketori"; ST.subj = SUBJ; QS = SUBJ === "mix" ? ALL : ALL.filter(q => q.subj === SUBJ); save(); }
 setSubj(ST.subj || "taketori");
 function subjOf(q) { return q.subj === "taketori" ? "竹取物語" : "電車は走る"; }
@@ -404,6 +420,50 @@ function setNav(k) { document.querySelectorAll("nav.bottom button").forEach(b =>
 function title(t) { $("#ttl").textContent = t; }
 function pct(x) { return Math.round(x * 100) + "%"; }
 function pageLabel(q) { return q.page && q.page !== "—" ? "教科書 p." + q.page : ""; }
+// ---------- 音声読み上げ（ブラウザの日本語音声） ----------
+const TTS = window.speechSynthesis;
+let VOICE = null, SPK = 0;
+function pickVoice() { try { const vs = TTS.getVoices().filter(v => /^ja/i.test(v.lang)); VOICE = vs.find(v => /Kyoko|O-ren|Google/.test(v.name)) || vs[0] || null; } catch (e) {} }
+if (TTS) { pickVoice(); try { TTS.addEventListener("voiceschanged", pickVoice); } catch (e) {} }
+const MARU = "①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳";
+function sayText(s) {
+  return String(s || "").replace(/[①-⑳]/g, c => (MARU.indexOf(c) + 1) + "、").replace(/[／]/g, "、").replace(/…+|〜/g, "、");
+}
+function stopSpeak() { SPK++; try { if (TTS) TTS.cancel(); } catch (e) {} }
+// 読み終わったら resolve（音声が使えない端末では、すぐ／時間切れで resolve）
+function speak(text) {
+  stopSpeak();
+  if (!TTS || !text || typeof SpeechSynthesisUtterance === "undefined") return Promise.resolve();
+  return new Promise(res => {
+    const u = new SpeechSynthesisUtterance(sayText(text));
+    u.lang = "ja-JP"; if (VOICE) u.voice = VOICE; u.rate = ST.prefs.rate || 1;
+    let done = false;
+    const fin = () => { if (done) return; done = true; clearTimeout(tm); res(); };
+    const tm = setTimeout(fin, 3000 + [...u.text].length * 250 / u.rate);
+    u.onend = fin; u.onerror = fin;
+    try { TTS.speak(u); } catch (e) { fin(); }
+  });
+}
+function qSpeech(q) {
+  let s = q.q;
+  if (q.cat === "漢字" && /読み/.test(q.q)) s = "画面の漢字の読みを、ひらがなで書きなさい。"; // 読み上げると答えがわかってしまう
+  else if (q.cat === "仮名遣い") s = s.replace(/「([^」]+)」/, (m, w) => "「" + [...w].join("、") + "」");
+  else if (q.ctx && (q.cat === "語句" || q.cat === "漢字")) s += "　本文、" + q.ctx;
+  if (q.type === "mc") s += "　" + q.choices.map((c, i) => KANA[i] + "、" + c).join("。　");
+  return s;
+}
+function aSpeech(q, head) {
+  return (head || "") + (q.type === "mc" ? "正解は、" + KANA[q.answer] + "、" + q.choices[q.answer] : (q.type === "extract" ? "正解は、" : "模範解答は、") + q.model) + "。";
+}
+function speakChip() { return `<button class="chip noprint" data-act="speak" aria-pressed="${ST.prefs.speak}">音声</button>`; }
+// 縦書きの本文で、選ばれている傍線が見える位置まで横にスクロール
+function centerBou() {
+  main().querySelectorAll(".honbun.tate").forEach(h => {
+    const on = h.querySelector(".bou.on"); if (!on) return;
+    const hr = h.getBoundingClientRect(), er = on.getBoundingClientRect();
+    h.scrollLeft += (er.left + er.width / 2) - (hr.left + hr.width / 2);
+  });
+}
 // ---------- 本文表示 ----------
 function passageHTML(pid, opt) {
   opt = opt || {};
@@ -420,7 +480,7 @@ function passageHTML(pid, opt) {
   }).join("");
   const tate = ST.prefs.tate ? " tate" : "";
   const src = p.subj === "taketori" ? "『竹取物語』" : "重松清「電車は走る」";
-  return `<div class="honbun${tate}${p.kobun ? " kobun" : ""}" data-pid="${pid}">${p.kobun ? `<span class="kb">古文</span>` : ""}${html}<span class="src">（${src} 教科書 p.${esc(p.page)}${p.lines ? "・" + esc(p.lines) : ""}より一部引用）</span></div>`;
+  return `<div class="honbun${tate}${p.kobun ? " kobun" : ""}${opt.cls ? " " + opt.cls : ""}" data-pid="${pid}">${p.kobun ? `<span class="kb">古文</span>` : ""}${html}<span class="src">（${src} 教科書 p.${esc(p.page)}${p.lines ? "・" + esc(p.lines) : ""}より一部引用）</span></div>`;
 }
 function tateToggle() {
   return `<button class="chip noprint" data-act="tate" aria-pressed="${ST.prefs.tate}">縦書き</button>`;
@@ -464,6 +524,7 @@ function startMode(k, extra) {
   if (k === "C") return pickChar();
   if (k === "D") return passageList();
   if (k === "E") return examList();
+  if (k === "L") return autoSetup();
   let pool, opts = { recent: ST.recent, seed: now() };
   let until = false;
   if (k === "I") {
@@ -494,14 +555,88 @@ function pickChar() {
   const desc = tk ? { 翁: "竹取の翁・育ての親", 媼: "翁の妻・育ての親", かぐや姫: "月の都の者", 帝: "手紙で心を通わせる", くらもちの皇子: "偽りの玉の枝", 天人: "月からの迎え" } : { カズオ: "二人のおばあさん／眠ったふり", タケシ: "おじいさん／唇をかみしめる", ヒナコ: "体調不良／涙", サユリ: "松葉づえのお姉さん／つり革を握りしめる", 語り手: "「僕たち」／「正しさ」" };
   main().innerHTML = `<div class="stack"><h2>誰の場面を練習する？</h2><div class="modes">${names.map(n => `<button class="mode" data-char="${n}"><span class="lt">${n[0]}</span><span><b>${n}</b><span class="d">${desc[n]}（${QS.filter(q => (q.ch || []).includes(n)).length}問）</span></span></button>`).join("")}</div></div>`;
 }
+// ---------- 答え自動表示モード ----------
+const RANGES = {
+  S: ["Sランク", q => q.rank === "S"],
+  V: ["語句", q => q.cat === "語句" && q.type === "mc"],
+  K: ["漢字", q => q.cat === "漢字"],
+  W: ["間違えた問題", q => ST.prog[q.id] && ST.prog[q.id].wrong > 0 && !ST.prog[q.id].mastered],
+  ALL: ["全問題", q => q.cat !== "原稿用紙"],
+};
+const AUTO = { t: null, iv: null, paused: false, tok: 0 };
+function stopAuto() { clearTimeout(AUTO.t); clearInterval(AUTO.iv); AUTO.t = AUTO.iv = null; AUTO.tok++; }
+function prefChips(key, opts) { return opts.map(([v, t]) => `<button class="chip" data-pref="${key}" data-v="${v}" aria-pressed="${String(ST.prefs[key]) === String(v)}">${t}</button>`).join(""); }
+function autoSetup() {
+  setNav("home"); title("答え自動表示");
+  if (!RANGES[ST.prefs.autoRange]) ST.prefs.autoRange = "S";
+  main().innerHTML = `<div class="sheet stack"><h2>答え自動表示</h2>
+    <p class="small">設問が出て（音声ONなら読み上げのあと）、決めた秒数がたつと答えが自動で出ます。その前に自分で答えてもOK。答えが出たあと「○ わかった／× わからなかった」を押すと記録されます（押さなくても進めます）。</p>
+    <div><b>範囲</b><div class="row">${prefChips("autoRange", Object.entries(RANGES).map(([k, [t, f]]) => [k, t + "（" + QS.filter(f).length + "）"]))}</div></div>
+    <div><b>答えが出るまで</b><div class="row">${prefChips("autoSec", [[5, "5秒"], [10, "10秒"], [15, "15秒"], [20, "20秒"], [30, "30秒"]])}</div></div>
+    <div><b>答えのあと</b><div class="row">${prefChips("autoNext", [[true, "自動で次へ"], [false, "ボタンで次へ"]])}</div></div>
+    <div><b>音声</b><div class="row">${prefChips("speak", [[true, "読み上げる"], [false, "読み上げない"]])}</div></div>
+    <div class="row"><button class="btn pri" id="autogo">はじめる</button><button class="btn" data-go="home">ホームへ</button></div><div id="automsg" class="small"></div></div>`;
+  $("#autogo").onclick = () => {
+    const pool = QS.filter(RANGES[ST.prefs.autoRange][1]);
+    if (!pool.length) { $("#automsg").textContent = "この範囲の問題はありません。ほかの範囲を選んでください。"; return; }
+    const queue = C.buildQueue(pool, ST.prog, now(), { recent: ST.recent, seed: now() });
+    SES = { mode: "L", auto: true, label: "答え自動表示｜" + SUBJECTS[SUBJ], queue, pos: 0, right: 0, done: 0, until: false, total0: queue.length };
+    AUTO.paused = false; LAST = home;
+    showQ(); window.scrollTo(0, 0);
+  };
+}
+function autoQ(q) {
+  const tok = AUTO.tok;
+  const startCount = () => {
+    if (tok !== AUTO.tok || !SES || SES.revealed || AUTO.iv) return;
+    const tot = ST.prefs.autoSec * 10; let left = tot;
+    const draw = () => { const cd = $("#cd"), ct = $("#cdt"); if (cd) cd.style.width = (1 - left / tot) * 100 + "%"; if (ct) ct.textContent = "答えまで " + Math.ceil(left / 10) + "秒"; };
+    draw();
+    AUTO.iv = setInterval(() => { if (AUTO.paused) return; left--; draw(); if (left <= 0) { clearInterval(AUTO.iv); reveal(q); } }, 100);
+  };
+  if (ST.prefs.speak) speak(qSpeech(q)).then(startCount); else startCount();
+}
+// 答えのあと、自動で次へ（音声があれば読み終わってから）
+function autoAdvance(p) {
+  if (!SES || !SES.auto) return;
+  const tok = AUTO.tok;
+  p.then(() => { if (tok !== AUTO.tok || AUTO.paused || !ST.prefs.autoNext) return; AUTO.t = setTimeout(() => { if (tok === AUTO.tok && !AUTO.paused) next(); }, ST.prefs.speak ? 2500 : 5000); });
+}
+function reveal(q) {
+  if (!SES || SES.revealed) return;
+  SES.revealed = true; clearInterval(AUTO.iv);
+  $("#submit").disabled = true;
+  const ta = $("#ans-" + CSS.escape(q.id)); if (ta) ta.readOnly = true;
+  if (q.type === "mc") { const box = main().querySelector(".choices"); box.dataset.done = "1"; box.querySelectorAll(".choice").forEach((b, i) => { if (i === q.answer) b.classList.add("right"); }); }
+  if ($("#reveal")) $("#reveal").hidden = true;
+  if ($("#cdt")) $("#cdt").textContent = "答え";
+  const model = q.type === "mc" ? `${KANA[q.answer]}　${esc(q.choices[q.answer])}` : esc(q.model);
+  const res = $("#res");
+  res.innerHTML = `<div class="result">
+    <div class="box green"><h4>${q.type === "mc" ? "正解" : "模範解答"} <button class="chip noprint" id="saya">🔊 答え</button></h4><p class="big">${model}</p></div>
+    <div class="box"><h4>解説</h4><p>${esc(q.expl)}</p></div>
+    <div class="box red"><h4>わかった？（押すと記録されます）</h4><div class="self" style="margin-top:4px"><button class="btn" data-self="1">○ わかった</button><button class="btn" data-self="0">× わからなかった</button></div></div>
+    <div class="row"><button class="btn pri" id="next">次の問題 →</button></div></div>`;
+  res.querySelectorAll("[data-self]").forEach(b => b.onclick = () => {
+    if (res.dataset.graded) return; res.dataset.graded = "1"; b.setAttribute("aria-pressed", "true");
+    const ok = b.dataset.self === "1"; record(q, ok); SES.done++;
+    if (ok) SES.right++; else SES.queue = C.requeue(SES.queue, SES.pos, q.id, 4);
+  });
+  $("#saya").onclick = () => speak(aSpeech(q));
+  $("#next").onclick = next;
+  autoAdvance(ST.prefs.speak ? speak(aSpeech(q)) : Promise.resolve());
+}
 function showQ(single) {
+  stopAuto(); stopSpeak();
+  if (SES) SES.revealed = false;
   const id = single || SES.queue[SES.pos];
   const q = QM[id];
+  const auto = !single && SES && SES.auto;
   title(single ? "問題 " + id : SES.label);
   const total = single ? 1 : SES.queue.length;
   const n = single ? 1 : SES.pos + 1;
   let body = "";
-  if (q.p) body += passageHTML(q.p, { on: q.u, only: q.u });
+  if (q.p) body += passageHTML(q.p, { on: q.u, only: q.u, cls: "inq" });
   if (q.ctx && !q.p) body += `<div class="ctx">${esc(q.scene)}</div>`;
   let ans = "";
   if (q.type === "mc") ans = `<div class="choices">${q.choices.map((c, i) => `<button class="choice" data-ch="${i}"><span class="kn">${KANA[i]}</span><span>${esc(c)}</span></button>`).join("")}</div>`;
@@ -512,10 +647,11 @@ function showQ(single) {
   }
   main().innerHTML = `<div class="stack">
     ${single ? "" : `<div class="progress"><span style="width:${(n - 1) / total * 100}%"></span></div>`}
-    <div class="qhead">${single ? "" : SES.until ? `<b>のこり ${total - n + 1}問</b>` : `<b>${n} / ${total}</b>`}<span class="tag ${q.rank}">${q.rank}ランク</span><span class="tag">${esc(q.cat)}</span>${/^補強/.test(q.reason) ? `<span class="tag B">補強</span>` : ""}${SUBJ === "mix" ? `<span class="tag">${subjOf(q)}</span>` : ""}<span>難易度${"★".repeat(q.diff)}</span><span>${esc(pageLabel(q))}</span><span>${esc(q.id)}</span>${q.p ? tateToggle() : ""}</div>
+    <div class="qhead">${single ? "" : SES.until ? `<b>のこり ${total - n + 1}問</b>` : `<b>${n} / ${total}</b>`}<span class="tag ${q.rank}">${q.rank}ランク</span><span class="tag">${esc(q.cat)}</span>${/^補強/.test(q.reason) ? `<span class="tag B">補強</span>` : ""}${SUBJ === "mix" ? `<span class="tag">${subjOf(q)}</span>` : ""}<span>難易度${"★".repeat(q.diff)}</span><span>${esc(pageLabel(q))}</span><span>${esc(q.id)}</span>${q.p ? tateToggle() : ""}${speakChip()}</div>
+    ${auto ? `<div class="autobar noprint"><div class="progress"><span id="cd" style="width:0"></span></div><span id="cdt" class="small muted"></span><button class="chip" id="pause" aria-pressed="${AUTO.paused}">${AUTO.paused ? "再開" : "一時停止"}</button><button class="chip" id="reveal">答えを見る</button></div>` : ""}
     ${body}
     <div class="sheet">
-      <div class="qtext">${q.p && q.u ? `<span class="tag">傍線${esc(q.u)}</span> ` : ""}${esc(q.q)}</div>
+      <div class="qtext">${q.p && q.u ? `<span class="tag">傍線${esc(q.u)}</span> ` : ""}${esc(q.q)} <button class="chip noprint" id="sayq" aria-label="設問を読み上げる">🔊 設問</button></div>
       ${q.ctx && q.p ? `<div class="ctx small">${esc(q.scene)}</div>` : ""}
       ${ans}
       <div class="row" style="margin-top:12px"><button class="btn pri" id="submit" ${q.type === "mc" ? "disabled" : ""}>解答する</button>${single ? "" : `<button class="btn" id="skip">とばす</button>`}</div>
@@ -533,6 +669,18 @@ function showQ(single) {
   if (ta && ta.tagName === "INPUT") ta.onkeydown = e => { if (e.key === "Enter") $("#submit").click(); };
   $("#submit").onclick = () => answer(q, q.type === "mc" ? sel : ta.value, single);
   if ($("#skip")) $("#skip").onclick = () => next();
+  $("#sayq").onclick = () => speak(qSpeech(q));
+  centerBou();
+  if (auto) {
+    $("#reveal").onclick = () => { stopSpeak(); reveal(q); };
+    $("#pause").onclick = () => {
+      const b = $("#pause"); AUTO.paused = !AUTO.paused;
+      b.textContent = AUTO.paused ? "再開" : "一時停止"; b.setAttribute("aria-pressed", AUTO.paused);
+      if (AUTO.paused) { stopSpeak(); clearTimeout(AUTO.t); }
+      else if (SES.revealed) autoAdvance(Promise.resolve());
+    };
+    autoQ(q);
+  } else if (ST.prefs.speak) speak(qSpeech(q));
 }
 function record(q, ok) {
   ST.prog[q.id] = C.update(ST.prog[q.id], ok, now(), D.examDate);
@@ -541,6 +689,8 @@ function record(q, ok) {
 }
 function answer(q, val, single) {
   const g = C.grade(q, val);
+  const auto = !single && SES && SES.auto;
+  if (auto) { if (SES.revealed) return; SES.revealed = true; clearInterval(AUTO.iv); if ($("#reveal")) $("#reveal").hidden = true; if ($("#cdt")) $("#cdt").textContent = "答え"; }
   $("#submit").disabled = true;
   const res = $("#res");
   let markHTML, selfHTML = "";
@@ -559,7 +709,7 @@ function answer(q, val, single) {
   const model = q.type === "mc" ? `${KANA[q.answer]}　${esc(q.choices[q.answer])}` : esc(q.model) + (q.accept && q.accept.length > 1 && q.cat !== "漢字" ? `<br><span class="small muted">別解：${q.accept.slice(1).map(esc).join("／")}</span>` : "");
   res.innerHTML = `<div class="result">
     <div class="mark">${markHTML}</div>
-    <div class="box green"><h4>${q.type === "mc" ? "正解" : "模範解答"}</h4><p>${model}</p></div>
+    <div class="box green"><h4>${q.type === "mc" ? "正解" : "模範解答"} <button class="chip noprint" id="saya">🔊 答え</button></h4><p>${model}</p></div>
     ${selfHTML}
     <div class="box"><h4>解説</h4><p>${esc(q.expl)}</p>${q.infer ? `<p class="small muted">※本文にはっきり書かれていない部分を、本文の言葉から推し量る問題です。</p>` : ""}</div>
     ${whys}
@@ -578,6 +728,10 @@ function answer(q, val, single) {
     b.setAttribute("aria-pressed", "true"); finish(b.dataset.self === "1");
   });
   if ($("#next")) $("#next").onclick = next;
+  $("#saya").onclick = () => speak(aSpeech(q));
+  const head = g.auto ? (g.ok ? "正解。" : "不正解。") : "";
+  const p = ST.prefs.speak ? speak(aSpeech(q, head)) : Promise.resolve();
+  if (auto && g.auto) autoAdvance(p);
   res.scrollIntoView({ behavior: "smooth", block: "nearest" });
 }
 function next() {
@@ -609,7 +763,7 @@ function passageView(pid, hl) {
     const go = () => { const u = el.dataset.key.split("-")[1]; const t = document.getElementById("u-" + u); main().querySelectorAll(".bou").forEach(x => x.classList.toggle("on", x === el)); if (t) t.scrollIntoView({ behavior: "smooth", block: "start" }); };
     el.onclick = go; el.onkeydown = e => { if (e.key === "Enter") go(); };
   });
-  if (hl) { const el = main().querySelector(`.bou[data-key="${CSS.escape(pid + "-" + hl)}"]`); if (el) el.scrollIntoView({ block: "center" }); }
+  if (hl) { const el = main().querySelector(`.bou[data-key="${CSS.escape(pid + "-" + hl)}"]`); if (el) el.scrollIntoView({ block: "center" }); centerBou(); }
 }
 // ---------- 模擬試験 ----------
 let EX = null;
@@ -742,7 +896,11 @@ function dataView() {
   <div class="sheet stack"><b>CSV（表計算ソフト用）</b><textarea id="csv" readonly style="min-height:5em;font-family:monospace;font-size:.72rem"></textarea><div class="row"><button class="btn" id="cpcsv">CSVをコピー</button></div></div>
   <div class="sheet stack"><b>記録を消す</b><div id="rz"><button class="btn" id="rst">すべての記録を消す…</button></div></div>
   <div class="sheet stack"><b>表示</b><div class="row"><button class="chip" data-act="tate" aria-pressed="${ST.prefs.tate}">本文を縦書きで表示</button></div></div>
+  <div class="sheet stack"><b>音声</b><div class="row">${prefChips("speak", [[true, "設問と答えを読み上げる"], [false, "読み上げない"]])}</div>
+    <div class="row"><span class="small">速さ</span>${prefChips("rate", [[0.8, "ゆっくり"], [1, "ふつう"], [1.2, "はやい"]])}<button class="chip" id="vtest">🔊 試しに聞く</button></div>
+    <p class="small muted">端末の日本語音声で読み上げます${TTS ? "" : "（このブラウザは読み上げに対応していません）"}。iPhoneは消音モード（横のスイッチ）だと鳴らないことがあります。漢字の読み問題は、答えがわからないよう漢字を読み上げません。</p></div>
   </div>`;
+  $("#vtest").onclick = () => speak("竹取の翁という者がいた。音声のテストです。");
   $("#bk").value = JSON.stringify({ app: "densha", v: 1, at: new Date().toISOString(), data: ST });
   $("#csv").value = C.toCSV(ALL, ST.prog).replace(/^﻿/, "");
   const copy = (ta, btn) => { const done = () => { btn.textContent = "コピーしました"; }; try { navigator.clipboard.writeText(ta.value).then(done, () => { ta.select(); done(); }); } catch (e) { ta.select(); } };
@@ -750,7 +908,7 @@ function dataView() {
   $("#cpcsv").onclick = () => copy($("#csv"), $("#cpcsv"));
   $("#rf").onchange = e => { const f = e.target.files[0]; if (!f) return; const r = new FileReader(); r.onload = () => { $("#rs").value = r.result; }; r.readAsText(f); };
   $("#rsb").onclick = () => {
-    try { const o = JSON.parse($("#rs").value); if (!o || o.app !== "densha" || !o.data || !o.data.prog) throw 0; ST = Object.assign({ prog: {}, recent: [], best: {}, exams: {}, prefs: { tate: false } }, o.data); save(); $("#rsm").textContent = "復元しました（" + Object.keys(ST.prog).length + "問分）"; }
+    try { const o = JSON.parse($("#rs").value); if (!o || o.app !== "densha" || !o.data || !o.data.prog) throw 0; ST = Object.assign({ prog: {}, recent: [], best: {}, exams: {}, prefs: Object.assign({}, DEFPREFS) }, o.data); fixPrefs(); save(); $("#rsm").textContent = "復元しました（" + Object.keys(ST.prog).length + "問分）"; }
     catch (e) { $("#rsm").textContent = "読みこめませんでした。バックアップの文字を全部貼りつけてください。"; }
   };
   $("#rst").onclick = () => { $("#rz").innerHTML = `<div class="confirm"><p>本当に消しますか？ 元に戻せません。</p><div class="row"><button class="btn red" id="rsty">消す</button><button class="btn" id="rstn">やめる</button></div></div>`; $("#rsty").onclick = () => { ST = { prog: {}, recent: [], best: {}, exams: {}, prefs: ST.prefs }; save(); dataView(); }; $("#rstn").onclick = dataView; };
@@ -763,10 +921,18 @@ function help() {
 // ---------- ルーティング ----------
 let LAST = home;
 document.addEventListener("click", e => {
-  const t = e.target.closest("[data-subj],[data-resume],[data-go],[data-mode],[data-char],[data-pass],[data-pass-list],[data-exam],[data-open],[data-backto],[data-list],[data-act]");
+  const t = e.target.closest("[data-subj],[data-resume],[data-go],[data-mode],[data-char],[data-pass],[data-pass-list],[data-exam],[data-open],[data-backto],[data-list],[data-act],[data-pref]");
   if (!t) return;
   const d = t.dataset;
-  if (d.act === "tate") { ST.prefs.tate = !ST.prefs.tate; save(); main().querySelectorAll(".honbun").forEach(h => h.classList.toggle("tate", ST.prefs.tate)); document.querySelectorAll('[data-act="tate"]').forEach(b => b.setAttribute("aria-pressed", ST.prefs.tate)); return; }
+  if (d.act === "tate") { ST.prefs.tate = !ST.prefs.tate; save(); main().querySelectorAll(".honbun").forEach(h => h.classList.toggle("tate", ST.prefs.tate)); document.querySelectorAll('[data-act="tate"]').forEach(b => b.setAttribute("aria-pressed", ST.prefs.tate)); centerBou(); return; }
+  if (d.act === "speak") { ST.prefs.speak = !ST.prefs.speak; save(); if (!ST.prefs.speak) stopSpeak(); document.querySelectorAll('[data-act="speak"]').forEach(b => b.setAttribute("aria-pressed", ST.prefs.speak)); return; }
+  if (d.pref) {
+    const v = d.v; ST.prefs[d.pref] = v === "true" ? true : v === "false" ? false : isNaN(v) ? v : Number(v); save();
+    document.querySelectorAll(`[data-pref="${d.pref}"]`).forEach(b => b.setAttribute("aria-pressed", b.dataset.v === v));
+    if (d.pref === "speak" && !ST.prefs.speak) stopSpeak();
+    return;
+  }
+  stopAuto(); stopSpeak();
   if (d.subj) { setSubj(d.subj); SES = null; home(); return; }
   if (d.go === "back") { return LAST(); }
   if (d.resume) { if (SES) { showQ(); window.scrollTo(0, 0); } return; }

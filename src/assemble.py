@@ -1,5 +1,4 @@
 import json, os, shutil
-from PIL import Image, ImageDraw, ImageFont
 B = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(B, "..", "docs")
 os.makedirs(OUT, exist_ok=True)
@@ -21,14 +20,15 @@ json.dump({"name": "電車は走る テスト対策", "short_name": "電車は�
            "background_color": "#F6F8F7", "theme_color": "#2C5D8F", "lang": "ja",
            "icons": [{"src": "icon-192.png", "sizes": "192x192", "type": "image/png"}, {"src": "icon-512.png", "sizes": "512x512", "type": "image/png"}]},
           open(os.path.join(OUT, "manifest.json"), "w"), ensure_ascii=False, indent=1)
-open(os.path.join(OUT, "sw.js"), "w").write("""const CACHE='densha-v1';
+open(os.path.join(OUT, "sw.js"), "w").write("""const CACHE='densha-v2';
 const FILES=['./','./index.html','./manifest.json','./icon-192.png','./icon-512.png'];
 self.addEventListener('install',e=>{e.waitUntil(caches.open(CACHE).then(c=>c.addAll(FILES)).then(()=>self.skipWaiting()))});
 self.addEventListener('activate',e=>{e.waitUntil(caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim()))});
-self.addEventListener('fetch',e=>{e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).then(res=>{const cp=res.clone();caches.open(CACHE).then(c=>c.put(e.request,cp)).catch(()=>{});return res;}).catch(()=>caches.match('./index.html'))))});
+self.addEventListener('fetch',e=>{if(e.request.mode==='navigate'){e.respondWith(fetch(e.request).then(res=>{const cp=res.clone();caches.open(CACHE).then(c=>c.put('./index.html',cp)).catch(()=>{});return res;}).catch(()=>caches.match('./index.html')));return;}e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).then(res=>{const cp=res.clone();caches.open(CACHE).then(c=>c.put(e.request,cp)).catch(()=>{});return res;}).catch(()=>caches.match('./index.html'))))});
 """)
 font = "/usr/share/fonts/opentype/noto/NotoSerifCJK-Bold.ttc"
-for n in (192, 512):
+for n in ((192, 512) if os.path.exists(font) else ()):  # フォントがない環境ではアイコンは作り直さない
+    from PIL import Image, ImageDraw, ImageFont
     im = Image.new("RGB", (n, n), "#2C5D8F"); d = ImageDraw.Draw(im)
     d.rounded_rectangle([n*0.08, n*0.62, n*0.92, n*0.70], radius=n*0.04, fill="#FFFFFF")
     f = ImageFont.truetype(font, int(n*0.5), index=0)
